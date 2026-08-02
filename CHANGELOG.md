@@ -11,8 +11,15 @@
 ### Added
 - Apache License 2.0으로 공개. `LICENSE`, `NOTICE`, `CONTRIBUTING.md`, `SECURITY.md` 추가.
 - `apache-rat-plugin` 기반 라이선스 헤더 검사를 빌드(`validate` 단계)와 CI에 추가.
+- `scripts/ssl/ssl-generate-openssl.sh` — SAN에 DNS 이름과 IP 주소를 명시 지정하는
+  openssl 기반 인증서 생성기. CA 100년 / 서버 10년(각각 `NIFI_SSL_CA_DAYS`,
+  `NIFI_SSL_DAYS`로 조정). IP로 NiFi에 접속할 때 발생하는 `Invalid SNI` 해결용.
 
 ### Changed
+- 배포 패키지(tar.gz/RPM)가 `conf/login-identity-providers.xml` 오버레이를 포함하여
+  single-user 계정 `admin`을 기본값으로 설정. **공개된 기본값이므로 설치 후
+  `nifi.sh set-single-user-credentials`로 반드시 교체해야 합니다** ([SECURITY.md](SECURITY.md) 참조).
+  RPM에서는 `config|noreplace`로 지정되어 업그레이드 시 교체한 값이 보존됩니다.
 - Apache NiFi에서 파생된 소스에 ASF 라이선스 헤더와 변경 고지를 복원하고, 각 NAR에
   파생 원본의 `META-INF/NOTICE`를 이관.
 - `scripts/ssl/ssl-generate.sh`: 하드코딩된 비밀번호를 제거하고 `NIFI_SSL_PASSWORD`

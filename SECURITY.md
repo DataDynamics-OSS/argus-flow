@@ -30,7 +30,7 @@ NiFi 버전으로 기반을 올리는 방식으로 대응합니다.
 |---|---|---|
 | TLS 키스토어/트러스트스토어 비밀번호 | `scripts/ssl/ssl-generate.sh` | 기본값이 `ChangeMe`입니다. `NIFI_SSL_PASSWORD` 환경변수로 강한 비밀번호를 지정하십시오 |
 | CA·인증서 호스트명 | `scripts/ssl/ssl-generate.sh` | 기본값 `nifi1.example.com`을 실제 호스트로 바꾸십시오 |
-| NiFi 관리자 자격증명 | NiFi `conf/` (single-user 모드 기본값) | 운영에서는 single-user 인증 대신 OIDC/LDAP/mTLS를 구성하십시오 |
+| **NiFi 관리자 자격증명** | `conf/login-identity-providers.xml` | 배포 패키지는 single-user 계정 **`admin`**을 기본값으로 담고 있습니다. **모든 설치본이 동일하고 해시가 공개되어 있으므로 반드시 교체하십시오.** NiFi를 정지한 뒤 `./bin/nifi.sh set-single-user-credentials <사용자> <비밀번호>` (비밀번호 12자 이상). 운영에서는 single-user 대신 OIDC/LDAP/mTLS 구성을 권장합니다 |
 | 민감 속성 암호화 키 | `nifi.sensitive.props.key` (`nifi.properties`) | 설치마다 고유한 값으로 설정하십시오. 기본값 사용 시 플로우에 저장된 비밀번호가 보호되지 않습니다 |
 | 오퍼레이터 RBAC 범위 | `operator/deploy/rbac.yaml`, `charts/argus-flow/templates/rbac.yaml` | 필요한 네임스페이스로 제한하십시오 |
 | 데이터소스 자격증명 | NiFi 컨트롤러 서비스 | 플로우 정의에 평문으로 넣지 말고 NiFi 파라미터 컨텍스트의 민감 파라미터를 쓰십시오 |

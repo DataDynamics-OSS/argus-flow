@@ -18,6 +18,7 @@
             <excludes>
                 <exclude>bin/**</exclude>
                 <!-- conf 오버레이로 교체하는 파일이 생기면 여기에 exclude 추가 (conf/README.md 참조) -->
+                <exclude>conf/login-identity-providers.xml</exclude>
             </excludes>
         </fileSet>
         <fileSet>

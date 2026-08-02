@@ -22,7 +22,13 @@ contents:
   - src: ./argus-flow-nifi.sysconfig
     dst: /etc/sysconfig/argus-flow-nifi
     type: config|noreplace
-  # NOTE: conf/ 하위 per-file noreplace 지정은 conf 오버레이 표준값 확정 시 추가
+  # conf 오버레이 중 관리자가 설치 후 수정하는 파일은 업그레이드 시 보존한다.
+  # 자격증명은 설치 후 `nifi.sh set-single-user-credentials` 로 교체되므로
+  # 패키지 업그레이드가 기본값으로 되돌리면 안 된다.
+  - src: ../target/rpmroot/dist/conf/login-identity-providers.xml
+    dst: /opt/argus-flow/nifi/conf/login-identity-providers.xml
+    type: config|noreplace
+  # NOTE: 그 외 conf/ 하위 per-file noreplace 지정은 오버레이 표준값 확정 시 추가
   #       (디렉터리 entry와 중복 dst가 되지 않도록 개별 파일 entry로 지정할 것)
 
 scripts:
