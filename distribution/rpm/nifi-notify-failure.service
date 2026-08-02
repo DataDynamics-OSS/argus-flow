@@ -1,0 +1,6 @@
+[Unit]
+Description=Argus Flow NiFi failure notification
+
+[Service]
+Type=oneshot
+ExecStart=/opt/argus-flow/nifi/bin/notify-failure.sh

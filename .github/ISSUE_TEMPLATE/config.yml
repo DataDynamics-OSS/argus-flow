@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 질문 · 사용법 논의
+    url: https://github.com/DataDynamics-OSS/argus-flow/discussions
+    about: 버그가 아닌 질문이나 아이디어는 Discussions에서 이야기해 주십시오.
+  - name: 보안 취약점 제보
+    url: https://github.com/DataDynamics-OSS/argus-flow/security/advisories/new
+    about: 취약점은 공개 이슈가 아니라 비공개 제보 절차를 이용해 주십시오.
+  - name: Apache NiFi 자체 이슈
+    url: https://issues.apache.org/jira/projects/NIFI
+    about: Argus Flow의 확장이 아니라 NiFi 본체의 문제라면 업스트림에 제보해 주십시오.

@@ -1,0 +1,31 @@
+name: CI Extensions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pom.xml"
+      - "nifi-extensions/**"
+      - "distribution/**"
+  pull_request:
+    paths:
+      - "pom.xml"
+      - "nifi-extensions/**"
+      - "distribution/**"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      # 라이선스 헤더 게이트. package 단계의 validate 에서도 돌지만, 별도 스텝으로
+      # 두어 헤더 누락이 빌드 실패와 구분되어 보이게 한다. 규약은 CONTRIBUTING.md 참조.
+      - name: License header check (Apache RAT)
+        run: ./mvnw -B -f nifi-extensions/pom.xml validate
+      - name: Build NARs
+        run: ./mvnw -B package

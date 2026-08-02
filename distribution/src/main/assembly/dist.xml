@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.2.0 http://maven.apache.org/xsd/assembly-2.2.0.xsd">
+    <id>bin</id>
+    <formats>
+        <format>tar.gz</format>
+    </formats>
+    <includeBaseDirectory>true</includeBaseDirectory>
+    <baseDirectory>argus-flow-nifi-${project.version}</baseDirectory>
+
+    <fileSets>
+        <!-- upstream NiFi binary, unpacked by download-maven-plugin.
+             bin/ 은 실행 권한 보존을 위해 별도 fileSet으로 분리 -->
+        <fileSet>
+            <directory>${project.build.directory}/upstream/nifi-${nifi.version}</directory>
+            <outputDirectory>.</outputDirectory>
+            <excludes>
+                <exclude>bin/**</exclude>
+                <!-- conf 오버레이로 교체하는 파일이 생기면 여기에 exclude 추가 (conf/README.md 참조) -->
+            </excludes>
+        </fileSet>
+        <fileSet>
+            <directory>${project.build.directory}/upstream/nifi-${nifi.version}/bin</directory>
+            <outputDirectory>bin</outputDirectory>
+            <fileMode>0755</fileMode>
+        </fileSet>
+        <!-- Argus NARs + nifi-hadoop-libraries-nar -->
+        <fileSet>
+            <directory>${project.build.directory}/nars</directory>
+            <outputDirectory>extensions</outputDirectory>
+        </fileSet>
+        <!-- conf 오버레이 -->
+        <fileSet>
+            <directory>${project.basedir}/src/main/resources/conf</directory>
+            <outputDirectory>conf</outputDirectory>
+            <excludes>
+                <exclude>README.md</exclude>
+            </excludes>
+        </fileSet>
+        <!-- 운영 스크립트 -->
+        <fileSet>
+            <directory>${project.basedir}/src/main/resources/bin</directory>
+            <outputDirectory>bin</outputDirectory>
+            <fileMode>0755</fileMode>
+            <excludes>
+                <exclude>README.md</exclude>
+            </excludes>
+        </fileSet>
+    </fileSets>
+</assembly>

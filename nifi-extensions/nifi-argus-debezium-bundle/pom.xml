@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright 2026 Data Dynamics Inc.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one or more
+  contributor license agreements. See the NOTICE file distributed with
+  this work for additional information regarding copyright ownership.
+  The ASF licenses this file to You under the Apache License, Version 2.0
+  (the "License"); you may not use this file except in compliance with
+  the License. You may obtain a copy of the License at
+  http://www.apache.org/licenses/LICENSE-2.0
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.datadynamics.nifi</groupId>
+        <artifactId>nifi-argus-extensions</artifactId>
+        <version>2.10.0-1</version>
+    </parent>
+
+    <artifactId>nifi-argus-debezium-bundle</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Argus Flow :: Debezium Bundle</name>
+    <!-- Debezium Embedded Engine(Apache 2.0) 기반 CDC 소스 번들 (신규 구현) -->
+
+    <properties>
+        <debezium.version>3.2.2.Final</debezium.version>
+    </properties>
+
+    <modules>
+        <module>nifi-argus-debezium-common</module>
+        <module>nifi-argus-debezium-mysql-processors</module>
+        <module>nifi-argus-debezium-mysql-nar</module>
+        <module>nifi-argus-debezium-postgresql-processors</module>
+        <module>nifi-argus-debezium-postgresql-nar</module>
+        <module>nifi-argus-debezium-oracle-processors</module>
+        <module>nifi-argus-debezium-oracle-nar</module>
+        <module>nifi-argus-debezium-sqlserver-processors</module>
+        <module>nifi-argus-debezium-sqlserver-nar</module>
+    </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.datadynamics.nifi</groupId>
+                <artifactId>nifi-argus-debezium-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!--
+              debezium-embedded는 kafka-clients를 전이 의존으로 가져오고, 그 안에 org.lz4:lz4-java가 딸려온다.
+              lz4-java는 상위 NiFi enforcer(BannedDependencies)가 "유지보수 중단" 사유로 금지한다.
+              임베디드 CDC 소스 경로에서는 Kafka LZ4 압축 코덱을 사용하지 않으므로 전 커넥터에서 제외한다.
+              (dependencyManagement의 exclusion은 하위 모듈의 의존성 해석에 그대로 적용된다)
+            -->
+            <dependency>
+                <groupId>io.debezium</groupId>
+                <artifactId>debezium-embedded</artifactId>
+                <version>${debezium.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.lz4</groupId>
+                        <artifactId>lz4-java</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>io.debezium</groupId>
+                <artifactId>debezium-connector-mysql</artifactId>
+                <version>${debezium.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.lz4</groupId>
+                        <artifactId>lz4-java</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>io.debezium</groupId>
+                <artifactId>debezium-connector-postgres</artifactId>
+                <version>${debezium.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.lz4</groupId>
+                        <artifactId>lz4-java</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>io.debezium</groupId>
+                <artifactId>debezium-connector-oracle</artifactId>
+                <version>${debezium.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.lz4</groupId>
+                        <artifactId>lz4-java</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>io.debezium</groupId>
+                <artifactId>debezium-connector-sqlserver</artifactId>
+                <version>${debezium.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.lz4</groupId>
+                        <artifactId>lz4-java</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright 2026 Data Dynamics Inc.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one or more
+  contributor license agreements. See the NOTICE file distributed with
+  this work for additional information regarding copyright ownership.
+  The ASF licenses this file to You under the Apache License, Version 2.0
+  (the "License"); you may not use this file except in compliance with
+  the License. You may obtain a copy of the License at
+  http://www.apache.org/licenses/LICENSE-2.0
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.datadynamics.nifi</groupId>
+        <artifactId>nifi-argus-extensions</artifactId>
+        <version>2.10.0-1</version>
+    </parent>
+
+    <artifactId>nifi-argus-deltalake-bundle</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Argus Flow :: Delta Lake Bundle</name>
+    <!-- Delta Kernel(Java, Apache 2.0) 기반 경로형 Delta Lake 싱크 번들 (신규 구현) -->
+
+    <properties>
+        <delta.kernel.version>4.3.1</delta.kernel.version>
+    </properties>
+
+    <modules>
+        <module>nifi-argus-deltalake-processors</module>
+        <module>nifi-argus-deltalake-nar</module>
+    </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.delta</groupId>
+                <artifactId>delta-kernel-api</artifactId>
+                <version>${delta.kernel.version}</version>
+            </dependency>
+            <!-- DefaultEngine + Hadoop FileSystem/Parquet 기반 IO. hadoop-client-runtime(3.4.2)·
+                 parquet-hadoop(1.16.0)를 전이로 가져와 NAR에 번들한다(file://·hdfs:// 기본 지원).
+                 상위 NiFi enforcer가 금지하는 로깅 구현체를 전이 트리에서 제거한다:
+                 - commons-logging (hadoop-client-runtime) → NiFi는 jcl-over-slf4j 사용
+                 - log4j-core/log4j-slf4j2-impl (delta-storage → unitycatalog-client) → NiFi는 logback/slf4j 사용 -->
+            <dependency>
+                <groupId>io.delta</groupId>
+                <artifactId>delta-kernel-defaults</artifactId>
+                <version>${delta.kernel.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>commons-logging</groupId>
+                        <artifactId>commons-logging</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.apache.logging.log4j</groupId>
+                        <artifactId>log4j-core</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.apache.logging.log4j</groupId>
+                        <artifactId>log4j-slf4j2-impl</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

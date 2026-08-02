@@ -1,0 +1,214 @@
+/*
+ * Modifications Copyright 2026 Data Dynamics Inc.
+ *
+ * Ported from Apache NiFi 1.28.0 (rel/nifi-1.28.0) and adapted for NiFi 2.10:
+ *   nifi-nar-bundles/nifi-standard-bundle/nifi-standard-processors/src/main/java/org/apache/nifi/processors/standard/db/impl/PostgreSQLDatabaseAdapter.java
+ */
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.datadynamics.nifi.processors.db.putdatabaserecord;
+
+import org.apache.nifi.util.StringUtils;
+
+import java.sql.JDBCType;
+import java.sql.Types;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
+
+import static java.sql.Types.CHAR;
+import static java.sql.Types.CLOB;
+import static java.sql.Types.LONGNVARCHAR;
+import static java.sql.Types.LONGVARCHAR;
+import static java.sql.Types.NCHAR;
+import static java.sql.Types.NCLOB;
+import static java.sql.Types.NVARCHAR;
+import static java.sql.Types.OTHER;
+import static java.sql.Types.SQLXML;
+import static java.sql.Types.VARCHAR;
+
+/**
+ * PostgreSQL과 호환되는 SQL을 생성하는 데이터베이스 어댑터.
+ * PostgreSQL 고유 문법을 활용한다는 점이 다른 어댑터와의 핵심 차이다:
+ * <li>UPSERT는 "INSERT ... ON CONFLICT (고유키) DO UPDATE SET (...) = (...)" 구문으로 구현한다
+ * (MySQL의 ON DUPLICATE KEY UPDATE와 달리 값 바인딩은 한 번만 필요하다).</li>
+ * <li>INSERT_IGNORE는 "INSERT ... ON CONFLICT (고유키) DO NOTHING" 구문으로 구현한다.</li>
+ * <li>가변 길이 문자열 계열 타입(VARCHAR, CLOB 등)은 TEXT로 매핑한다.</li>
+ * SELECT의 LIMIT/OFFSET 페이징은 ANSI 표준과 동일하므로 {@link GenericDatabaseAdapter}의 구현을 그대로 상속받아 사용한다.
+ */
+public class PostgreSQLDatabaseAdapter extends GenericDatabaseAdapter {
+    @Override
+    public String getName() {
+        return "PostgreSQL";
+    }
+
+    @Override
+    public String getDescription() {
+        return "PostgreSQL과 호환되는 SQL을 생성합니다";
+    }
+
+    @Override
+    public boolean supportsUpsert() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsInsertIgnore() {
+        return true;
+    }
+
+    /**
+     * PostgreSQL 고유의 "INSERT INTO ... VALUES (...) ON CONFLICT (고유키) DO UPDATE SET (컬럼들) = (EXCLUDED.컬럼들)"
+     * 구문으로 UPSERT 문을 생성한다. EXCLUDED는 충돌을 일으킨(즉, 삽입을 시도했던) 새 값들을 가리키는 PostgreSQL 예약 별칭이다.
+     * MySQL과 달리 값을 한 번만 바인딩하면 되므로 {@link #getTimesToAddColumnObjectsForUpsert()}를 오버라이드하지 않는다.
+     */
+    @Override
+    public String getUpsertStatement(String table, List<String> columnNames, Collection<String> uniqueKeyColumnNames) {
+        if (StringUtils.isEmpty(table)) {
+            throw new IllegalArgumentException("Table name cannot be null or blank");
+        }
+        if (columnNames == null || columnNames.isEmpty()) {
+            throw new IllegalArgumentException("Column names cannot be null or empty");
+        }
+        if (uniqueKeyColumnNames == null || uniqueKeyColumnNames.isEmpty()) {
+            throw new IllegalArgumentException("Key column names cannot be null or empty");
+        }
+
+        String columns = columnNames.stream()
+                .collect(Collectors.joining(", "));
+
+        String parameterizedInsertValues = columnNames.stream()
+                .map(__ -> "?")
+                .collect(Collectors.joining(", "));
+
+        String updateValues = columnNames.stream()
+                .map(columnName -> "EXCLUDED." + columnName)
+                .collect(Collectors.joining(", "));
+
+        String conflictClause = "(" + uniqueKeyColumnNames.stream().collect(Collectors.joining(", ")) + ")";
+
+        StringBuilder statementStringBuilder = new StringBuilder("INSERT INTO ")
+                .append(table)
+                .append("(").append(columns).append(")")
+                .append(" VALUES ")
+                .append("(").append(parameterizedInsertValues).append(")")
+                .append(" ON CONFLICT ")
+                .append(conflictClause)
+                .append(" DO UPDATE SET ")
+                .append("(").append(columns).append(")")
+                .append(" = ")
+                .append("(").append(updateValues).append(")");
+
+        return statementStringBuilder.toString();
+    }
+
+    /**
+     * PostgreSQL 고유의 "INSERT ... ON CONFLICT (고유키) DO NOTHING" 구문으로 INSERT_IGNORE 문을 생성한다.
+     * 고유 키 충돌이 발생하면 아무 동작도 하지 않고 해당 행을 조용히 무시한다.
+     */
+    @Override
+    public String getInsertIgnoreStatement(String table, List<String> columnNames, Collection<String> uniqueKeyColumnNames) {
+        if (StringUtils.isEmpty(table)) {
+            throw new IllegalArgumentException("Table name cannot be null or blank");
+        }
+        if (columnNames == null || columnNames.isEmpty()) {
+            throw new IllegalArgumentException("Column names cannot be null or empty");
+        }
+        if (uniqueKeyColumnNames == null || uniqueKeyColumnNames.isEmpty()) {
+            throw new IllegalArgumentException("Key column names cannot be null or empty");
+        }
+
+        String columns = columnNames.stream()
+                .collect(Collectors.joining(", "));
+
+        String parameterizedInsertValues = columnNames.stream()
+                .map(__ -> "?")
+                .collect(Collectors.joining(", "));
+
+        String conflictClause = "(" + uniqueKeyColumnNames.stream().collect(Collectors.joining(", ")) + ")";
+
+        StringBuilder statementStringBuilder = new StringBuilder("INSERT INTO ")
+                .append(table)
+                .append("(").append(columns).append(")")
+                .append(" VALUES ")
+                .append("(").append(parameterizedInsertValues).append(")")
+                .append(" ON CONFLICT ")
+                .append(conflictClause)
+                .append(" DO NOTHING");
+        return statementStringBuilder.toString();
+    }
+
+    @Override
+    public boolean supportsCreateTableIfNotExists() {
+        return true;
+    }
+
+    /**
+     * PostgreSQL 문법에 맞게 "ALTER TABLE ... ADD COLUMN 컬럼명 타입, ADD COLUMN ..." 형태로 컬럼 추가 구문을 생성한다.
+     * (MySQL과 동일하게 컬럼마다 별도의 ADD COLUMN 절을 사용하는 방식이다.)
+     */
+    @Override
+    public List<String> getAlterTableStatements(final String tableName, final List<ColumnDescription> columnsToAdd, final boolean quoteTableName, final boolean quoteColumnNames) {
+        List<String> columnsAndDatatypes = new ArrayList<>(columnsToAdd.size());
+        for (ColumnDescription column : columnsToAdd) {
+            String dataType = getSQLForDataType(column.getDataType());
+            StringBuilder sb = new StringBuilder("ADD COLUMN ")
+                    .append(quoteColumnNames ? getColumnQuoteString() : "")
+                    .append(column.getColumnName())
+                    .append(quoteColumnNames ? getColumnQuoteString() : "")
+                    .append(" ")
+                    .append(dataType);
+            columnsAndDatatypes.add(sb.toString());
+        }
+
+        StringBuilder alterTableStatement = new StringBuilder();
+        return Collections.singletonList(alterTableStatement.append("ALTER TABLE ")
+                .append(quoteTableName ? getTableQuoteString() : "")
+                .append(tableName)
+                .append(quoteTableName ? getTableQuoteString() : "")
+                .append(" ")
+                .append(String.join(", ", columnsAndDatatypes))
+                .toString());
+    }
+
+    /**
+     * PostgreSQL에 맞는 컬럼 타입 이름으로 변환한다.
+     * 문자열/CLOB/XML 계열 타입은 길이 제한 없는 TEXT로 매핑한다.
+     */
+    @Override
+    public String getSQLForDataType(int sqlType) {
+        switch (sqlType) {
+            case Types.DOUBLE:
+                return "DOUBLE PRECISION";
+            case CHAR:
+            case LONGNVARCHAR:
+            case LONGVARCHAR:
+            case NCHAR:
+            case NVARCHAR:
+            case VARCHAR:
+            case CLOB:
+            case NCLOB:
+            case OTHER:
+            case SQLXML:
+                return "TEXT";
+            default:
+                return JDBCType.valueOf(sqlType).getName();
+        }
+    }
+}

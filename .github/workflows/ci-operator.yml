@@ -1,0 +1,30 @@
+name: CI Operator
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "operator/**"
+  pull_request:
+    paths:
+      - "operator/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: operator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: operator/requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Run tests
+        run: python -m pytest
+      - name: Build image
+        run: docker build -t argus-flow/nifi2-operator:ci .

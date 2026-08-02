@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nifi-operator
+  namespace: nifi-operator-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nifi-operator-role
+rules:
+  # NiFi custom resources
+  - apiGroups: ["datadynamics.io"]
+    resources:
+      - nificlusters
+      - nificlusters/status
+      - nififlows
+      - nififlows/status
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Core resources (serviceaccounts: NiFi Pod용 SA 생성)
+  - apiGroups: [""]
+    resources: ["services", "configmaps", "secrets", "pods", "persistentvolumeclaims", "serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # StatefulSets
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # NiFi Pod용 Role/RoleBinding 생성
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # PodDisruptionBudget (멀티노드 클러스터)
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # NiFi Pod의 리더 선출에 필요한 leases 권한을 Role로 위임하려면
+  # 오퍼레이터 자신도 이 권한을 보유해야 한다 (RBAC 에스컬레이션 방지 규칙).
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # cert-manager Certificates
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Events
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  # kopf requires access to cluster-wide resources for peering
+  - apiGroups: ["kopf.dev"]
+    resources: ["clusterkopfpeerings"]
+    verbs: ["get", "list", "watch", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nifi-operator-binding
+subjects:
+  - kind: ServiceAccount
+    name: nifi-operator
+    namespace: nifi-operator-system
+roleRef:
+  kind: ClusterRole
+  name: nifi-operator-role
+  apiGroup: rbac.authorization.k8s.io

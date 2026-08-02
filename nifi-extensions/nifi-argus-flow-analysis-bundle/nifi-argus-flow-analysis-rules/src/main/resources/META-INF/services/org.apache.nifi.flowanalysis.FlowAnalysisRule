@@ -1,0 +1,7 @@
+# Argus Flow — 운영 거버넌스용 Flow Analysis Rule (신규 구현)
+io.datadynamics.nifi.flowanalysis.TimerThreadPoolCeilingRule
+io.datadynamics.nifi.flowanalysis.ProcessorThreadShareLimitRule
+io.datadynamics.nifi.flowanalysis.ListingScheduleGuardRule
+io.datadynamics.nifi.flowanalysis.DeadEndFunnelRule
+io.datadynamics.nifi.flowanalysis.ProcessorConcurrencyCapRule
+io.datadynamics.nifi.flowanalysis.IcebergSinkMergeRule

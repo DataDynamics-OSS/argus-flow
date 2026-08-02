@@ -1,0 +1,112 @@
+# 기여 안내
+
+Argus Flow에 기여해 주셔서 감사합니다. 이 문서는 개발 환경 구성, 라이선스 헤더 규약,
+그리고 PR 절차를 설명합니다.
+
+## 요구 사항
+
+| 대상 | 필요한 것 |
+|---|---|
+| `nifi-extensions/`, `distribution/` | JDK 21+, Maven wrapper(`./mvnw`, 3.9.16 자동 설치) |
+| `operator/`, `tools/nifi-config/` | Python 3.12+ |
+| RPM 패키징 | [nfpm](https://nfpm.goreleaser.com) |
+| 컨테이너 이미지 | docker |
+| Helm 차트 | helm 3 |
+
+NiFi 2.10 parent POM이 Maven 3.9.16+를 강제하므로 시스템 Maven 대신 동봉된
+wrapper(`./mvnw`)를 사용하십시오. 사내 미러 등 다른 저장소에서 Maven 배포판을 받아야 한다면
+파일을 고치지 말고 환경변수를 쓰십시오:
+
+```bash
+export MVNW_REPOURL=https://repo.example.com/maven2
+```
+
+## 빌드와 테스트
+
+```bash
+make extensions        # NAR 빌드 (= ./mvnw -B package)
+make dist              # NiFi 재패키징 tar.gz (upstream 바이너리 다운로드 포함)
+make rpm               # RPM (nfpm 필요)
+make docker-image      # NAR 포함 NiFi 이미지
+make operator-test     # 오퍼레이터 단위 테스트
+make nifi-config-test  # conf 설정 CLI 단위 테스트
+```
+
+특정 모듈만 테스트하려면:
+
+```bash
+./mvnw -B -pl nifi-extensions/nifi-argus-db-bundle/nifi-argus-db-processors test
+```
+
+## 라이선스 헤더 규약 — 중요
+
+이 저장소는 Apache License 2.0으로 배포되며, `nifi-extensions/`의 상당수 소스가
+**Apache NiFi에서 파생**된 것입니다. Apache-2.0 §4(b)(c)(d)는 파생물 배포 시 원본의 고지를
+유지하고 변경 사실을 밝힐 것을 요구합니다. 따라서 모든 소스 파일은 헤더를 가져야 하며,
+`apache-rat-plugin`이 빌드(`validate` 단계)에서 이를 강제합니다.
+
+### 새 파일을 추가할 때
+
+**자체 작성한 파일**은 Data Dynamics 헤더를 붙입니다:
+
+```java
+/*
+ * Copyright 2026 Data Dynamics Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * ... (전문은 기존 파일 참조)
+ */
+```
+
+**Apache NiFi에서 가져온 파일**은 원본의 ASF 헤더를 **그대로 유지**하고, 그 아래에 변경
+고지를 덧붙입니다. 출처 파일 경로를 반드시 명시하십시오:
+
+```java
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * ... (업스트림 원문 그대로) ...
+ */
+/*
+ * Modifications Copyright 2026 Data Dynamics Inc.
+ *
+ * Ported from Apache NiFi 1.28.0 (rel/nifi-1.28.0) and adapted for NiFi 2.10:
+ *   nifi-nar-bundles/nifi-kudu-bundle/.../PutKudu.java
+ */
+```
+
+### 업스트림 소스를 가져오는 방법
+
+포팅 소스는 **`apache/nifi` 공식 저장소에서만** 가져옵니다. 벤더 배포판 저장소나 출처가
+불명확한 파생 소스는 단 한 줄도 복사·참조하지 마십시오.
+
+```bash
+./scripts/fetch-upstream.sh    # rel/nifi-1.28.0 을 커밋 해시까지 검증하고 받는다
+```
+
+업스트림에 없는 기능이 필요하면 **원본 코드를 보지 않고** 공개 API 문서를 기반으로 새로
+구현하십시오.
+
+### 새 NAR 번들을 추가할 때
+
+`src/main/resources/META-INF/NOTICE`를 반드시 두십시오. 업스트림 번들에서 파생했다면 그
+번들의 NOTICE를 이관하고 앞에 파생 사실을 밝힙니다. 자체 구현이라면 저작권과 주요 제3자
+구성요소를 적습니다. 기존 번들의 NOTICE를 참고하십시오.
+
+## 코드 스타일
+
+- Java 21, 들여쓰기 4칸. 기존 파일의 스타일을 따릅니다.
+- 주석과 NiFi UI에 노출되는 속성 레이블·설명은 한국어로 작성합니다.
+- Python은 `ruff` 기본 규칙을 따릅니다.
+
+## 커밋과 PR
+
+- 브랜치는 `main`에서 따고, 커밋 메시지는 `<scope>: <요약>` 형태로 씁니다
+  (예: `hive: fix connection pool validation`). 본문에 **왜** 바꿨는지를 적으십시오.
+- PR을 열기 전에 로컬에서 빌드와 테스트가 통과하는지 확인하십시오.
+- PR 템플릿의 체크리스트, 특히 **라이선스 헤더 항목**을 확인해 주십시오.
+- 보안 취약점은 이슈로 올리지 말고 [SECURITY.md](SECURITY.md)의 절차를 따라 주십시오.
+
+## 라이선스
+
+기여하신 코드는 [Apache License 2.0](LICENSE)으로 배포됩니다. PR을 제출하는 것은 해당
+라이선스로 기여물을 제공하는 데 동의하는 것으로 간주합니다.

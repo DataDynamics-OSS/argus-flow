@@ -1,0 +1,2 @@
+io.datadynamics.nifi.services.dbcp.hive.VendorHive3ConnectionPool
+io.datadynamics.nifi.services.dbcp.hive.Hive3ConnectionPool

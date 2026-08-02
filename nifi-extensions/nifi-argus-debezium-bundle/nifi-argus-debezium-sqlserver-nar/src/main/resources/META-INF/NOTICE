@@ -1,0 +1,11 @@
+nifi-argus-debezium-sqlserver-nar
+Copyright 2026 Data Dynamics Inc.
+
+This product includes software developed at
+Data Dynamics Inc. (https://www.data-dynamics.io/).
+
+This product depends on Apache NiFi (https://nifi.apache.org/) extension APIs,
+Copyright The Apache Software Foundation, licensed under the Apache License 2.0.
+
+It also depends on:
+  * Debezium (https://debezium.io/), Apache License 2.0

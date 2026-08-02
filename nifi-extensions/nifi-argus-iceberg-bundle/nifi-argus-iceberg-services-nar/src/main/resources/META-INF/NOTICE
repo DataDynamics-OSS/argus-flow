@@ -1,0 +1,32 @@
+nifi-argus-iceberg-services-nar
+Copyright 2026 Data Dynamics Inc.
+
+This product includes software developed at
+Data Dynamics Inc. (https://www.data-dynamics.io/).
+
+This bundle is derived from Apache NiFi (https://nifi.apache.org/) -- specifically
+the nifi-iceberg-services-nar bundle of Apache NiFi 1.28.0 -- and has been modified
+for Apache NiFi 2.10. The NOTICE distributed with that original bundle is
+reproduced in full below, as required by section 4(d) of the Apache License 2.0.
+
+================================================================================
+NOTICE from Apache NiFi 1.28.0 -- nifi-iceberg-services-nar
+================================================================================
+
+nifi-iceberg-services-nar
+Copyright 2014-2024 The Apache Software Foundation
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/).
+
+===========================================
+Apache Software License v2
+===========================================
+
+  (ASLv2) Apache Iceberg
+    The following NOTICE information applies:
+      Apache Iceberg
+      Copyright 2017-2022 The Apache Software Foundation
+
+      This product includes software developed at
+      The Apache Software Foundation (http://www.apache.org/).

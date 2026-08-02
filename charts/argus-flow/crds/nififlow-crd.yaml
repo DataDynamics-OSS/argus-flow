@@ -1,0 +1,76 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: nififlows.datadynamics.io
+  annotations:
+    description: "NiFi Flow deployment managed by the NiFi Operator"
+spec:
+  group: datadynamics.io
+  names:
+    kind: NiFiFlow
+    plural: nififlows
+    singular: nififlow
+    shortNames: ["nflow"]
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: ["clusterRef"]
+              properties:
+                clusterRef:
+                  type: string
+                  description: "Name of the NiFiCluster resource"
+                registryUrl:
+                  type: string
+                  description: "NiFi Registry URL"
+                bucketId:
+                  type: string
+                  description: "NiFi Registry bucket ID"
+                flowId:
+                  type: string
+                  description: "NiFi Registry flow ID"
+                flowVersion:
+                  type: integer
+                  description: "Flow version to deploy"
+                processGroupId:
+                  type: string
+                  default: "root"
+                  description: "Target process group ID"
+                autoStart:
+                  type: boolean
+                  default: true
+                  description: "Auto-start the flow after deployment"
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: ["Deploying", "Running", "Stopped", "Error"]
+                deployedProcessGroupId:
+                  type: string
+                deployedVersion:
+                  type: integer
+                message:
+                  type: string
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Cluster
+          type: string
+          jsonPath: .spec.clusterRef
+        - name: Version
+          type: integer
+          jsonPath: .spec.flowVersion
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

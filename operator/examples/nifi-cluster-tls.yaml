@@ -1,0 +1,38 @@
+# NiFi 2.x Cluster with TLS — 3 nodes, cert-manager integration
+apiVersion: datadynamics.io/v1alpha1
+kind: NiFiCluster
+metadata:
+  name: nifi-secure
+  namespace: nifi
+spec:
+  replicas: 3
+  version: "2.4.0"
+  image: "apache/nifi"
+  resources:
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+  storage:
+    size: "50Gi"
+    storageClassName: "standard"
+  config:
+    jvmHeapSize: "3g"
+    maxThreads: 20
+    sensitivePropsKey: "my-production-secret-key"
+    webProxyHost: "nifi.example.com"
+  tls:
+    enabled: true
+    issuerRef:
+      name: letsencrypt-prod
+      kind: ClusterIssuer
+  auth:
+    type: ldap
+    ldap:
+      url: "ldaps://ldap.example.com:636"
+      searchBase: "ou=users,dc=example,dc=com"
+      searchFilter: "(uid={0})"
+      managerDn: "cn=admin,dc=example,dc=com"
+      managerPasswordSecretRef: "nifi-ldap-password"

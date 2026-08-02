@@ -1,0 +1,5 @@
+io.datadynamics.nifi.processors.db.ExecuteFastSQL
+io.datadynamics.nifi.processors.db.bulkinsert.BulkOracleInsertProcessor
+io.datadynamics.nifi.processors.db.executesql.ExecuteSQL
+io.datadynamics.nifi.processors.db.executesql.ExecuteSQLRecord
+io.datadynamics.nifi.processors.db.putdatabaserecord.PutDatabaseRecord

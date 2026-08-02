@@ -1,0 +1,6 @@
+io.datadynamics.nifi.processors.hive.SelectHive3QL
+io.datadynamics.nifi.processors.hive.PutHive3QL
+io.datadynamics.nifi.processors.hive.PutHive3Streaming
+io.datadynamics.nifi.processors.hive.UpdateHive3Table
+io.datadynamics.nifi.processors.hive.TriggerHiveMetaStoreEvent
+io.datadynamics.nifi.processors.orc.PutORC

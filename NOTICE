@@ -1,0 +1,91 @@
+Argus Flow
+Copyright 2026 Data Dynamics Inc.
+
+This product is developed, sponsored, and maintained by Data Dynamics Inc.
+(https://www.data-dynamics.io/).
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this product except in compliance with the License.
+A copy of the License is included in the LICENSE file, and is also available at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+Apache NiFi
+
+This product is built on and derived from Apache NiFi
+(https://nifi.apache.org/), Copyright The Apache Software Foundation,
+licensed under the Apache License 2.0.
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/).
+
+The derivation takes three forms:
+
+1. Derived source code.
+   Several extension bundles under `nifi-extensions/` contain source files
+   originally taken from Apache NiFi 1.28.0 (tag `rel/nifi-1.28.0`) and adapted
+   for Apache NiFi 2.10. Those files retain the original ASF license header and
+   carry an additional notice identifying the upstream file they were derived
+   from, as required by sections 4(b) and 4(c) of the Apache License 2.0.
+   The affected bundles are:
+
+     nifi-argus-standard-bundle              from nifi-standard-bundle
+     nifi-argus-db-bundle                    from nifi-standard-bundle,
+                                                  nifi-extension-utils
+     nifi-argus-hive-bundle                  from nifi-hive-bundle (Hive 3)
+     nifi-argus-kudu-bundle                  from nifi-kudu-bundle
+     nifi-argus-parquet-bundle               from nifi-parquet-bundle,
+                                                  nifi-extension-utils
+     nifi-argus-record-serialization-bundle  from nifi-record-serialization-
+                                                  services-bundle
+     nifi-argus-reporting-bundle             from nifi-standard-bundle
+                                                  (standard reporting tasks)
+     nifi-argus-iceberg-bundle               from nifi-iceberg-bundle
+
+   Each NAR module carries the NOTICE of the upstream bundle it derives from,
+   under `src/main/resources/META-INF/NOTICE`.
+
+   The following bundles are original works of Data Dynamics Inc. and are not
+   derived from Apache NiFi source: nifi-argus-debezium-bundle,
+   nifi-argus-deltalake-bundle, nifi-argus-flow-analysis-bundle.
+
+2. Redistributed binaries.
+   The `distribution/` module repackages the official Apache NiFi 2.10.0 binary
+   distribution together with the Argus NAR extensions and a configuration
+   overlay, producing tar.gz and RPM artifacts. Those artifacts contain Apache
+   NiFi in unmodified binary form, along with its own LICENSE and NOTICE files.
+
+3. Container images.
+   The image built from `docker/Dockerfile` uses the official `apache/nifi`
+   image as its base and adds the Argus NAR extensions. The base image is
+   redistributed unmodified under its own license terms.
+
+--------------------------------------------------------------------------------
+Third-party components
+
+This product depends on third-party components distributed under their own
+licenses. The NAR-level NOTICE files listed above enumerate the components
+bundled into each extension. Notable items:
+
+* Debezium (Apache-2.0) — https://debezium.io/
+  Embedded engine and the MySQL / PostgreSQL / Oracle / SQL Server connectors,
+  bundled into the nifi-argus-debezium-* NARs.
+
+* Delta Kernel (Apache-2.0) — https://delta.io/
+  Bundled into the nifi-argus-deltalake NAR.
+
+* Apache Iceberg, Apache Hive, Apache Hadoop, Apache Parquet, Apache ORC,
+  Apache Avro, Apache Calcite, Apache Kudu, Apache ZooKeeper (all Apache-2.0)
+  Bundled into the corresponding extension NARs.
+
+* Cloudera JDBC Connector for Apache Hive — NOT bundled and NOT distributed.
+  `VendorHive3ConnectionPool` references the driver class
+  `com.cloudera.hive.jdbc.HS2Driver` by name only. Users who need that
+  controller service must obtain the driver from the vendor themselves and
+  install it into the NiFi `lib/` directory; it is subject to the vendor's own
+  license terms. See nifi-extensions/nifi-argus-hive-bundle/README.md.
+
+* Upstream container images (Apache NiFi) and the Apache NiFi binary
+  distribution are pinned by version tag and downloaded at build time; they are
+  not vendored into this repository.

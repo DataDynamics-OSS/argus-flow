@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Install nfpm
+        run: |
+          curl -sL https://github.com/goreleaser/nfpm/releases/latest/download/nfpm_amd64.deb -o nfpm.deb
+          sudo dpkg -i nfpm.deb
+      - name: Build tarball and RPM
+        run: make rpm  # rpm 타깃이 dist(전체 빌드+테스트+tar.gz)를 선행 실행
+      - uses: azure/setup-helm@v4
+      - name: Package helm chart
+        run: helm package charts/argus-flow -d distribution/target/
+      - name: Upload release artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            distribution/target/argus-flow-nifi-*.tar.gz
+            distribution/target/*.rpm
+            distribution/target/argus-flow-*.tgz

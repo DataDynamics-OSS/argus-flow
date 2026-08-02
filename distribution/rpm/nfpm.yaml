@@ -1,0 +1,30 @@
+# nfpm packaging descriptor — https://nfpm.goreleaser.com
+# Usage: `make rpm` (assembles the tarball, unpacks it to target/rpmroot, then runs nfpm)
+name: argus-flow-nifi
+arch: x86_64
+platform: linux
+# version은 env 치환 지원 필드, contents.src는 미지원이라 고정 경로(dist) 사용
+version: ${NIFI_VERSION}
+release: ${RELEASE}
+maintainer: DataDynamics <dev@datadynamics.io>
+description: |
+  Apache NiFi repackaged with Argus Flow custom extensions.
+license: Apache-2.0
+homepage: https://github.com/DataDynamics
+
+contents:
+  - src: ../target/rpmroot/dist
+    dst: /opt/argus-flow/nifi
+  - src: ./nifi.service
+    dst: /usr/lib/systemd/system/nifi.service
+  - src: ./nifi-notify-failure.service
+    dst: /usr/lib/systemd/system/nifi-notify-failure.service
+  - src: ./argus-flow-nifi.sysconfig
+    dst: /etc/sysconfig/argus-flow-nifi
+    type: config|noreplace
+  # NOTE: conf/ 하위 per-file noreplace 지정은 conf 오버레이 표준값 확정 시 추가
+  #       (디렉터리 entry와 중복 dst가 되지 않도록 개별 파일 entry로 지정할 것)
+
+scripts:
+  postinstall: ./scripts/postinstall.sh
+  preremove: ./scripts/preremove.sh

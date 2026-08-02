@@ -1,0 +1,14 @@
+# NiFi Flow Deployment — deploy a versioned flow from NiFi Registry
+apiVersion: datadynamics.io/v1alpha1
+kind: NiFiFlow
+metadata:
+  name: etl-pipeline
+  namespace: nifi
+spec:
+  clusterRef: my-nifi
+  registryUrl: "https://nifi-registry.example.com"
+  bucketId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+  flowId: "12345678-abcd-ef01-2345-678901234567"
+  flowVersion: 3
+  processGroupId: "root"
+  autoStart: true

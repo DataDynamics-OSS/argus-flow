@@ -1,0 +1,26 @@
+# Simple NiFi 2.x Cluster — 3 nodes, no TLS, single-user auth
+apiVersion: datadynamics.io/v1alpha1
+kind: NiFiCluster
+metadata:
+  name: my-nifi
+  namespace: nifi
+spec:
+  replicas: 3
+  version: "2.4.0"
+  image: "apache/nifi"
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  storage:
+    size: "20Gi"
+    storageClassName: "standard"
+  config:
+    jvmHeapSize: "1536m"
+    maxThreads: 15
+    sensitivePropsKey: "change-me-to-a-real-key"
+  auth:
+    type: single-user

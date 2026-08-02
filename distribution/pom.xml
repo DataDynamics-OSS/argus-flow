@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright 2026 Data Dynamics Inc.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.datadynamics.nifi</groupId>
+        <artifactId>argus-flow</artifactId>
+        <version>2.10.0-1</version>
+    </parent>
+
+    <artifactId>argus-flow-distribution</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Argus Flow :: Distribution</name>
+    <description>Repackages the official NiFi binary with Argus NARs and conf overlay (tar.gz); RPM via nfpm</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-standard-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-db-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-kudu-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-parquet-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-record-serialization-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-hive-services-api-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-hive-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-reporting-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <!-- Debezium 임베디드 CDC 소스 (커넥터별 독립 NAR) -->
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-debezium-mysql-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-debezium-postgresql-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-debezium-oracle-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-debezium-sqlserver-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <!-- Delta Kernel 기반 경로형 Delta Lake 싱크 -->
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-deltalake-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <!-- Iceberg 싱크 (upstream 1.28.0 → 2.10.0 포팅). services-api ← services/nar 계층이며
+             copy-dependencies가 excludeTransitive=true 이므로 3종을 모두 명시 선언해야 target/nars 에 수집된다 -->
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-iceberg-services-api-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-iceberg-services-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-iceberg-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <!-- 운영 거버넌스용 Flow Analysis Rule (스레드 풀·동시성·리스팅 스케줄·데드엔드·Iceberg 머지) -->
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-flow-analysis-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <!-- 공식 2.10.0 바이너리에 미포함(include-hadoop 프로파일 전용)이지만
+             nifi-argus-parquet-nar의 부모 NAR이라 동봉 필수 -->
+        <dependency>
+            <groupId>org.apache.nifi</groupId>
+            <artifactId>nifi-hadoop-libraries-nar</artifactId>
+            <version>${nifi.version}</version>
+            <type>nar</type>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- 항상 실행: 배포 대상 NAR 전체를 target/nars 에 수집 (tar.gz·docker 이미지 공용) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-argus-nars</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <includeTypes>nar</includeTypes>
+                            <excludeTransitive>true</excludeTransitive>
+                            <outputDirectory>${project.build.directory}/nars</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!-- Heavy: downloads the ~800MB upstream binary. Activate explicitly with -Pdist -->
+        <profile>
+            <id>dist</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>com.googlecode.maven-download-plugin</groupId>
+                        <artifactId>download-maven-plugin</artifactId>
+                        <version>1.9.0</version>
+                        <executions>
+                            <execution>
+                                <id>download-nifi-binary</id>
+                                <phase>generate-resources</phase>
+                                <goals>
+                                    <goal>wget</goal>
+                                </goals>
+                                <configuration>
+                                    <url>https://archive.apache.org/dist/nifi/${nifi.version}/nifi-${nifi.version}-bin.zip</url>
+                                    <unpack>true</unpack>
+                                    <outputDirectory>${project.build.directory}/upstream</outputDirectory>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-assembly-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>assemble-tarball</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>single</goal>
+                                </goals>
+                                <configuration>
+                                    <descriptors>
+                                        <descriptor>src/main/assembly/dist.xml</descriptor>
+                                    </descriptors>
+                                    <finalName>argus-flow-nifi-${project.version}</finalName>
+                                    <appendAssemblyId>false</appendAssemblyId>
+                                    <tarLongFileMode>posix</tarLongFileMode>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

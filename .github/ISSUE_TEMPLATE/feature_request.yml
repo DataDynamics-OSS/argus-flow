@@ -1,0 +1,48 @@
+name: 기능 제안
+description: 새 기능이나 개선을 제안합니다
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: 구성요소
+      options:
+        - "확장 번들 (기존 번들 개선)"
+        - "확장 번들 (신규 프로세서 / 컨트롤러 서비스)"
+        - "배포 패키징 (tar.gz / RPM)"
+        - "Kubernetes 오퍼레이터"
+        - "Helm 차트"
+        - "컨테이너 이미지"
+        - "nifi-config CLI"
+        - "문서"
+        - "기타"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 어떤 문제를 해결하려는 것입니까
+      description: 제안하는 해법보다 먼저, 실제로 겪고 있는 상황을 적어 주십시오
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 제안하는 방식
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 검토한 대안
+      description: 업스트림 Apache NiFi의 기존 컴포넌트로 해결되는지 확인하셨다면 함께 적어 주십시오
+
+  - type: checkboxes
+    id: upstream
+    attributes:
+      label: 확인
+      options:
+        - label: 업스트림 Apache NiFi에 동일한 기능이 이미 있는지 찾아보았습니다

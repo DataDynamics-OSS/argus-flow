@@ -1,0 +1,21 @@
+[Unit]
+Description=Apache NiFi (Argus Flow)
+After=network.target
+
+[Service]
+Type=forking
+User=nifi
+Group=nifi
+Environment=NIFI_HOME=/opt/argus-flow/nifi
+ExecStart=/opt/argus-flow/nifi/bin/nifi.sh start
+ExecStop=/opt/argus-flow/nifi/bin/nifi.sh stop
+Restart=on-failure
+RestartSec=10
+# 프로세스 사망 알림
+OnFailure=nifi-notify-failure.service
+LimitNOFILE=50000
+TimeoutStartSec=180
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target

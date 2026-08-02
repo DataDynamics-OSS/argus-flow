@@ -1,0 +1,2 @@
+io.datadynamics.nifi.services.record.csv.CSVReader
+io.datadynamics.nifi.services.record.avro.TimestampFormatAvroRecordSetWriter

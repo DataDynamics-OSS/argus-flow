@@ -1,0 +1,2 @@
+io.datadynamics.nifi.processors.parquet.MergeParquet
+io.datadynamics.nifi.processors.parquet.PutParquet

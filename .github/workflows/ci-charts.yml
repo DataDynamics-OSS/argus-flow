@@ -1,0 +1,21 @@
+name: CI Charts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+  pull_request:
+    paths:
+      - "charts/**"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Lint chart
+        run: helm lint charts/argus-flow
+      - name: Render templates
+        run: helm template smoke charts/argus-flow > /dev/null

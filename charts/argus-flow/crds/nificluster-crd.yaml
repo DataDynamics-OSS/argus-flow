@@ -1,0 +1,180 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: nificlusters.datadynamics.io
+  annotations:
+    description: "NiFi 2.x Cluster managed by the NiFi Operator"
+spec:
+  group: datadynamics.io
+  names:
+    kind: NiFiCluster
+    plural: nificlusters
+    singular: nificluster
+    shortNames: ["nifi"]
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: ["replicas", "version"]
+              properties:
+                replicas:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                  description: "Number of NiFi cluster nodes"
+                version:
+                  type: string
+                  description: "NiFi Docker image version (e.g., 2.4.0)"
+                image:
+                  type: string
+                  default: "apache/nifi"
+                  description: "NiFi Docker image repository"
+                resources:
+                  type: object
+                  properties:
+                    requests:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                          default: "1"
+                        memory:
+                          type: string
+                          default: "2Gi"
+                    limits:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                          default: "2"
+                        memory:
+                          type: string
+                          default: "4Gi"
+                storage:
+                  type: object
+                  properties:
+                    size:
+                      type: string
+                      default: "10Gi"
+                      description: "PVC size for each NiFi node"
+                    storageClassName:
+                      type: string
+                      description: "Kubernetes StorageClass name"
+                config:
+                  type: object
+                  properties:
+                    jvmHeapSize:
+                      type: string
+                      default: "1g"
+                      description: "JVM heap size (Xms and Xmx)"
+                    maxThreads:
+                      type: integer
+                      default: 10
+                      description: "Cluster node protocol max threads"
+                    sensitivePropsKey:
+                      type: string
+                      description: "NiFi sensitive properties encryption key"
+                    webProxyHost:
+                      type: string
+                      description: "Proxy host for NiFi web UI"
+                tls:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                      description: "Enable TLS for NiFi cluster"
+                    issuerRef:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                          description: "cert-manager Issuer or ClusterIssuer name"
+                        kind:
+                          type: string
+                          default: "ClusterIssuer"
+                          enum: ["Issuer", "ClusterIssuer"]
+                    initialAdminIdentity:
+                      type: string
+                      description: >-
+                        Initial admin identity for authorizers.xml (client cert DN).
+                        Defaults to CN=<name>-operator (the operator client cert).
+                notification:
+                  type: object
+                  properties:
+                    webhookUrl:
+                      type: string
+                      description: >-
+                        Webhook URL notified when the cluster becomes
+                        unhealthy
+                auth:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum: ["single-user", "ldap", "oidc"]
+                      default: "single-user"
+                      description: "Authentication method"
+                    ldap:
+                      type: object
+                      properties:
+                        url:
+                          type: string
+                        managerDn:
+                          type: string
+                        managerPasswordSecretRef:
+                          type: string
+                        searchBase:
+                          type: string
+                        searchFilter:
+                          type: string
+                    oidc:
+                      type: object
+                      properties:
+                        discoveryUrl:
+                          type: string
+                        clientId:
+                          type: string
+                        clientSecretRef:
+                          type: string
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: ["Creating", "Running", "Scaling", "Updating", "Error"]
+                readyNodes:
+                  type: integer
+                totalNodes:
+                  type: integer
+                clusterCoordinator:
+                  type: string
+                message:
+                  type: string
+                version:
+                  type: string
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Replicas
+          type: integer
+          jsonPath: .spec.replicas
+        - name: Ready
+          type: integer
+          jsonPath: .status.readyNodes
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Version
+          type: string
+          jsonPath: .spec.version
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

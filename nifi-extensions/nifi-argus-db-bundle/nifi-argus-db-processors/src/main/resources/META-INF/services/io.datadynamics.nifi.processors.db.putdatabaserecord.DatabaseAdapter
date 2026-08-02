@@ -1,0 +1,5 @@
+io.datadynamics.nifi.processors.db.putdatabaserecord.GenericDatabaseAdapter
+io.datadynamics.nifi.processors.db.putdatabaserecord.OracleDatabaseAdapter
+io.datadynamics.nifi.processors.db.putdatabaserecord.Oracle12DatabaseAdapter
+io.datadynamics.nifi.processors.db.putdatabaserecord.PostgreSQLDatabaseAdapter
+io.datadynamics.nifi.processors.db.putdatabaserecord.MySQLDatabaseAdapter
