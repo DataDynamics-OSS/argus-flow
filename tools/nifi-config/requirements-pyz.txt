@@ -1,0 +1,32 @@
+# zipapp(.pyz) 빌드용 의존성 핀.
+#
+# pyproject.toml 은 개발 편의를 위해 범위로 지정(questionary>=2.0,<3.0)하지만, 배포본에
+# 들어가는 산출물은 빌드 시점마다 달라지면 안 된다. 여기에 버전과 해시를 고정한다.
+#
+# scripts/build-config-pyz.sh 가 --require-hashes 로 설치하므로, 이 목록에 없는 전이
+# 의존성이 생기면 빌드가 실패한다. 그때 아래 절차로 갱신한다:
+#
+#   python3 -m pip download --only-binary=:all: -d /tmp/whl questionary rich
+#   for f in /tmp/whl/*.whl; do sha256sum "$f"; done
+#
+# 전부 순수 Python(py3-none-any)이어야 한다 — 네이티브 확장이 섞이면 아키텍처마다
+# 다른 산출물이 필요해져 단일 파일 배포가 성립하지 않는다.
+
+questionary==2.1.1 \
+    --hash=sha256:a51af13f345f1cdea62347589fbb6df3b290306ab8930713bfae4d475a7d4a59
+rich==15.0.0 \
+    --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb
+
+# questionary 의 전이 의존성
+prompt_toolkit==3.0.53 \
+    --hash=sha256:01c0891d7f9237d5e339f7d3e42cdae80b7534abb1c7c0e3352efba6231492f2
+wcwidth==0.8.2 \
+    --hash=sha256:d63947694a0539a1d51e01eda7caf800c291020e6cdd7e28ad7b14dd33ad4f85
+
+# rich 의 전이 의존성
+markdown_it_py==4.2.0 \
+    --hash=sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a
+mdurl==0.1.2 \
+    --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8
+pygments==2.20.0 \
+    --hash=sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176

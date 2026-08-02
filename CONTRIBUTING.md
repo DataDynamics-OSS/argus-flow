@@ -92,6 +92,24 @@ make nifi-config-test  # conf 설정 CLI 단위 테스트
 번들의 NOTICE를 이관하고 앞에 파생 사실을 밝힙니다. 자체 구현이라면 저작권과 주요 제3자
 구성요소를 적습니다. 기존 번들의 NOTICE를 참고하십시오.
 
+### 설정 도구(`tools/nifi-config`)를 바꿀 때
+
+개발 중에는 pip 로 설치해 씁니다(`make nifi-config`). 배포본에는 같은 코드가 zipapp
+(`.pyz`)으로 들어가므로 **두 경로가 같은 소스를 씁니다.**
+
+- 의존성을 추가·변경하면 `pyproject.toml` 과 `requirements-pyz.txt` 를 **함께** 고치십시오.
+  후자는 해시까지 고정하며 `--require-hashes` 로 설치하므로, 목록에 없는 전이 의존성이
+  생기면 빌드가 실패합니다. 갱신 절차는 그 파일 주석에 있습니다.
+- **순수 Python 패키지만 쓸 수 있습니다.** 네이티브 확장이 섞이면 아키텍처마다 다른
+  산출물이 필요해져 단일 파일 배포가 성립하지 않습니다.
+- 대화형 동작을 바꿨다면 zipapp 으로도 확인하십시오. 파이프로는 검증되지 않습니다 —
+  questionary 는 실제 터미널을 요구하므로 pty 로 구동해야 합니다.
+
+```bash
+scripts/build-config-pyz.sh /tmp/argus-config.pyz 2.10.0-1
+python3 /tmp/argus-config.pyz --conf-dir <conf> --get nifi.web.https.port
+```
+
 ### DB 스키마를 바꿀 때
 
 `nifi-argus-db-iaa` 확장의 스키마 정본은

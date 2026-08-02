@@ -164,6 +164,30 @@
     <build>
         <plugins>
             <!-- 항상 실행: 배포 대상 NAR 전체를 target/nars 에 수집 (tar.gz·docker 이미지 공용) -->
+            <!-- 설정 TUI 를 단일 실행 파일(zipapp)로 만들어 tools/argus-config 에 둔다.
+                 스크립트는 python3 가 없거나 3.10 미만이면 경고만 남기고 성공으로 끝난다 —
+                 파이썬 없이도 NAR·tar.gz 를 빌드할 수 있어야 하기 때문이다. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>build-config-pyz</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${project.basedir}/../scripts/build-config-pyz.sh</executable>
+                            <arguments>
+                                <argument>${project.build.directory}/tools/argus-config/argus-config.pyz</argument>
+                                <argument>${project.version}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>

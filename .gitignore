@@ -8,3 +8,8 @@ __pycache__/
 .venv/
 .pytest_cache/
 .upstream/
+
+# Python 빌드 부산물 (setuptools / pip install)
+build/
+dist/
+*.egg-info/

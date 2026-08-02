@@ -11,6 +11,21 @@
 ### Added
 - Apache License 2.0으로 공개. `LICENSE`, `NOTICE`, `CONTRIBUTING.md`, `SECURITY.md` 추가.
 - `apache-rat-plugin` 기반 라이선스 헤더 검사를 빌드(`validate` 단계)와 CI에 추가.
+- **설정 도구를 배포본에 포함** (`bin/argus-config.sh`) — `conf/` 를 대화형(TUI)으로
+  편집합니다. 지금까지는 소스 저장소에서 pip 로 설치해야 했으나, 2.3MB zipapp 으로
+  `tools/argus-config/` 에 담겨 tar.gz·RPM 만 받은 환경에서도 바로 쓸 수 있습니다.
+  python3 3.10 이상이 필요하며, 없으면 도구만 동작하지 않고 NiFi 자체에는 영향이 없습니다.
+- **설정 마법사와 진단** — `argus-config.sh`에 다음이 추가되었습니다.
+  - **처음 설정하기**: 접속 주소 → TLS 인증서 → 로그인 방식을 순서대로 안내합니다.
+    접속 주소를 한 번만 받아 인증서 SAN에 그대로 쓰므로 `Invalid SNI`를 예방합니다.
+  - **`--check`**: SAN 불일치, IP 접속 불가, 인증서 만료, 주석 상태인 로그인 프로바이더,
+    DB 인증의 인증·인가 불일치를 진단합니다. 문제가 있으면 종료 코드 1.
+  - **레시피 `tls:generate`**: 인증서 생성 명령을 안내하고 keystore 관련 키를 설정합니다.
+  - **레시피 `login:db`**: `login-identity-providers.xml`과 `authorizers.xml`을 한 번에
+    일관되게 설정합니다.
+  - **사용자 관리 메뉴**: `argus-user.sh`에 위임합니다.
+- **`bin/argus-ssl.sh`** — 인증서 생성 스크립트를 배포본에 포함. 지금까지는 소스 저장소에만
+  있었습니다.
 - **DB 기반 인증·인가 확장** (`nifi-argus-db-iaa`) — 사용자와 비밀번호를 RDB에서 관리합니다.
   `DbLoginIdentityProvider`(인증)와 `DbUserGroupProvider`(인가)를 함께 제공하며, NiFi UI에서
   사용자·그룹을 관리할 수 있습니다. PostgreSQL과 MariaDB를 지원하고, PostgreSQL 드라이버만
@@ -39,6 +54,8 @@
   `MVNW_REPOURL` 환경변수를 사용.
 
 ### Fixed
+- 배포 tar.gz에 빌드 캐시의 런타임 산출물(생성된 keystore 등)이 포함될 수 있던 문제.
+  조립에서 `conf/*.p12`·`logs/`·`work/` 등을 제외합니다.
 - `scripts/ssl/ssl-generate.sh`가 `#!/bin/sh`로 선언되었으나 bash 전용 문법을 사용해
   dash에서 실패하던 문제.
 

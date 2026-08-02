@@ -22,6 +22,13 @@ class Session:
         self.out_dir = out_dir or conf_dir
         self._props: dict[str, PropertiesFile] = {}
         self._xml: dict[str, XmlConfig] = {}
+        # 레시피가 남기는 후속 실행 명령. (설명, argv) 목록.
+        #
+        # 설정 파일 편집과 외부 프로세스 실행은 성격이 다르다. 인증서 생성은 되돌리기
+        # 어려우므로 레시피가 직접 실행하지 않고 여기에 쌓아 두고, 호출자가 정한다:
+        # 대화형은 명령을 보여주고 확인받아 실행하고, 비대화형(--recipe)은 출력만 한다.
+        # CI 가 인증서를 의도치 않게 재발급하는 사고를 막기 위해서다.
+        self.pending_commands: list[tuple[str, list[str]]] = []
 
     def props(self, filename: str) -> PropertiesFile:
         if filename not in self._props:

@@ -44,6 +44,9 @@ class Setting:
     choices: tuple[str, ...] = ()
     default: str = ""
     sensitive: bool = False
+    # 비대화형(--param)에서 생략해도 되는 항목. 기본값도 없고 민감값도 아니지만
+    # 정말로 선택인 경우에 쓴다(예: 번들되지 않은 JDBC 드라이버 경로).
+    optional: bool = False
     # 커스텀 검증기: (value) -> 오류메시지 or None
     validator: Optional[Callable[[str], Optional[str]]] = field(
         default=None, repr=False

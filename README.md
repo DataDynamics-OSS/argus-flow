@@ -23,7 +23,7 @@ Argus Flow는 Apache NiFi 2.10.0을 실제 운영 환경에 올리는 데 필요
 | `operator/` | NiFi 2.x K8s 오퍼레이터 (Python, kopf) | pip + pytest |
 | `charts/` | Helm 차트 | helm |
 | `docker/` | NAR 포함 NiFi 이미지 | docker |
-| `tools/nifi-config/` | NiFi `conf/` 대화형 설정 CLI (Python, questionary) | pip + pytest |
+| `tools/nifi-config/` | NiFi `conf/` 대화형 설정 도구 (Python, questionary) — 배포본에도 포함 | pip + pytest |
 | `scripts/ssl/` | 인증서 생성 스크립트 | — |
 
 확장은 도메인별 번들로 나뉘고 번들마다 독립된 NAR로 패키징되므로, 서드파티 의존성이
@@ -59,6 +59,48 @@ make nifi-config NIFI_HOME=/opt/nifi     # 또는 CONF=/opt/nifi/conf
 필요합니다. Maven은 시스템에 설치된 것 대신 동봉된 wrapper(`./mvnw`)를 사용하십시오.
 NiFi 2.10 parent POM이 Maven 3.9.16 이상을 요구하기 때문에, wrapper가 해당 버전을 받아
 고정해 줍니다.
+
+## 설치본 설정
+
+배포본에는 설정과 운영을 위한 도구 두 개가 함께 들어갑니다. 둘 다 `NIFI_HOME` 을 자동으로
+인식하므로 경로를 입력할 필요가 없습니다.
+
+```bash
+./bin/argus-config.sh          # conf/ 설정 (대화형 TUI)
+./bin/argus-config.sh --check  # 설정 진단
+./bin/argus-ssl.sh             # TLS 인증서 생성 (보통은 argus-config.sh 가 안내)
+./bin/argus-user.sh --help     # DB 인증을 쓸 때의 사용자 관리
+```
+
+`argus-config.sh` 는 200줄이 넘는 `nifi.properties` 와 XML 을 직접 편집하는 대신, 마법사와
+검색으로 값을 고르게 합니다. 원본의 주석과 순서는 보존되고, 저장 전에 diff 를 보여줍니다.
+
+처음 설치했다면 메뉴의 **처음 설정하기**로 시작하십시오. 접속 주소 → TLS 인증서 → 로그인
+방식을 순서대로 안내하며, **접속 주소를 한 번만 받아 인증서 SAN 에 그대로 씁니다.** 이 둘이
+어긋나면 NiFi 가 `Invalid SNI` 로 접속을 거절하는데, 두 곳에 따로 입력하면 어긋나기 쉽습니다.
+
+설정이 서로 맞는지 진단할 수도 있습니다:
+
+```bash
+./bin/argus-config.sh --check
+```
+
+인증서 SAN 과 바인드 주소의 불일치, IP 접속 불가, 만료 임박, 로그인 프로바이더가 주석 상태인
+경우, DB 인증에서 인증·인가가 서로 다른 DB 를 보는 경우를 잡습니다. 문제가 있으면 종료 코드
+1 을 돌려주므로 배포 스크립트에 넣을 수 있습니다(경고만 있으면 0).
+
+자동화에는 비대화형 모드를 씁니다:
+
+```bash
+./bin/argus-config.sh --set nifi.web.https.port=9443
+./bin/argus-config.sh --recipe tls:generate --param hosts=nifi1.example.com --param ips=10.0.0.5
+./bin/argus-config.sh --recipe login:db --param db_url=jdbc:postgresql://db:5432/nifi ...
+```
+
+비대화형에서는 인증서 생성 같은 외부 명령을 **실행하지 않고 출력만** 합니다. CI 가 인증서를
+의도치 않게 재발급하는 것을 막기 위해서입니다.
+
+python3 3.10 이상이 필요합니다. 없으면 도구만 동작하지 않고 NiFi 자체에는 영향이 없습니다.
 
 ## ⚠️ 운영 환경 배포 전 확인
 

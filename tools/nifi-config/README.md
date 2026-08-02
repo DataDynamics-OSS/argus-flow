@@ -19,7 +19,20 @@ Claude CLI처럼 화살표 선택 + 검증 입력으로 동작한다.
 - **XML도 주석 보존**: provider의 `<property>` 값만 바꾸고 설명 주석은 유지한다.
 - **파일 간 정합성**: 레시피는 XML과 `nifi.properties`의 연관 키를 함께 설정한다.
 
-## 설치
+## 배포본에서 실행 (설치 불필요)
+
+tar.gz·RPM 에는 이 도구가 zipapp 으로 포함되어 있습니다. pip 설치 없이 바로 쓸 수 있습니다.
+
+```bash
+<NIFI_HOME>/bin/argus-config.sh              # 대화형
+<NIFI_HOME>/bin/argus-config.sh --list
+```
+
+`NIFI_HOME` 은 스크립트 위치에서 자동으로 정해집니다. 다른 설치본을 대상으로 하려면
+`--nifi-home` 또는 `--conf-dir` 을 주면 그쪽이 우선합니다.
+python3 3.10 이상이 필요하고, 다른 경로의 python 을 쓰려면 `ARGUS_PYTHON` 을 지정합니다.
+
+## 설치 (소스에서 개발할 때)
 
 ```bash
 cd tools/nifi-config

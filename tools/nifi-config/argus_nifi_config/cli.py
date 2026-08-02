@@ -11,7 +11,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import __version__
+from . import version_string
 from .catalog import BY_FILENAME, PROPERTIES_FILES
 from .catalog import nifi_properties, bootstrap
 from .catalog.xml_recipes import BY_ID as RECIPES_BY_ID
@@ -147,19 +147,24 @@ def _cmd_recipe(args) -> int:
         if p.key not in values:
             if p.default:
                 values[p.key] = p.default
-            elif not p.sensitive:
+            elif not p.sensitive and not p.optional:
                 raise SystemExit(
                     f"레시피 '{recipe.id}' 에 --param {p.key}=<값> 이 필요합니다"
                 )
         err = p.validate(values.get(p.key, ""))
         if err:
             raise SystemExit(f"'{p.key}' 값 오류: {err}")
-    xml = session.xml(recipe.file)
+    xml = session.xml(recipe.file) if recipe.file else None
     props = session.props("nifi.properties")
-    notes = recipe.apply(xml, values, props)
+    notes = recipe.apply(xml, values, props, session)
     _print_diff(session)
     for n in notes:
         print(f"  * {n}")
+    # 비대화형에서는 외부 명령을 실행하지 않는다. CI 가 인증서를 의도치 않게 재발급하는
+    # 사고를 막기 위해서다. 실행이 필요하면 사용자가 이 명령을 직접 스크립트에 넣는다.
+    for desc, argv in session.pending_commands:
+        print(f"\n  다음 명령을 직접 실행하십시오 — {desc}:")
+        print("    " + " ".join(argv))
     written = session.save_all(dry_run=args.dry_run)
     _report_written(written, args.dry_run)
     return 0
@@ -180,7 +185,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="argus-nifi-config",
         description="NiFi conf/ 디렉터리 대화형/비대화형 설정 도구",
     )
-    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    p.add_argument("--version", action="version", version=f"%(prog)s {version_string()}")
     # 대상
     p.add_argument("--nifi-home", help="NiFi 설치 루트 (conf 는 <home>/conf)")
     p.add_argument("--conf-dir", help="conf 디렉터리 직접 지정")
@@ -195,8 +200,35 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--search", metavar="TERM", help="키 검색(파일 내)")
     g.add_argument("--set", metavar="KEY=VALUE", action="append", help="값 설정(반복 가능)")
     g.add_argument("--recipe", metavar="ID", help="XML 레시피 적용")
+    g.add_argument("--check", action="store_true",
+                   help="설정 점검(TLS·로그인 프로바이더 정합성). 변경하지 않는다")
     p.add_argument("--param", metavar="K=V", action="append", help="레시피 파라미터(반복)")
     return p
+
+
+
+def _cmd_check(args) -> int:
+    """설정 점검. 변경하지 않는다.
+
+    종료 코드: 0 = 문제 없음, 1 = FAIL 항목 있음. 경고만 있으면 0 이다 —
+    스크립트가 경고 때문에 실패하면 무시하게 되기 때문이다.
+    """
+    from .checks import FAIL, OK, SKIP, WARN, run_checks
+
+    session = _make_session(args)
+    mark = {OK: "[ok]  ", WARN: "[warn]", FAIL: "[FAIL]", SKIP: "[skip]"}
+    failed = 0
+    for r in run_checks(session):
+        if r.level == FAIL:
+            failed += 1
+        print(f"{mark[r.level]} {r.title}")
+        if r.detail:
+            print(f"        {r.detail}")
+        if r.hint:
+            print(f"        → {r.hint}")
+    print()
+    print("문제 없음" if failed == 0 else f"확인이 필요한 항목 {failed}개")
+    return 1 if failed else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -211,6 +243,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_search(args)
     if args.set:
         return _cmd_set(args)
+    if args.check:
+        return _cmd_check(args)
     if args.recipe:
         return _cmd_recipe(args)
     # 액션 없음 → 대화형 TUI

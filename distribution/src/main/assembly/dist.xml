@@ -20,6 +20,23 @@
                 <!-- conf 오버레이로 교체하는 파일이 생기면 여기에 exclude 추가 (conf/README.md 참조) -->
                 <exclude>conf/login-identity-providers.xml</exclude>
                 <exclude>conf/authorizers.xml</exclude>
+                <!-- 런타임 산출물 제외.
+                     upstream fileSet 은 target/upstream/ 을 통째로 복사하므로, 그 디렉터리에서
+                     NiFi 를 한 번이라도 기동하면 생성된 인증서·플로우·사용자 파일이 배포본에
+                     따라 들어간다. 실제로 그런 일이 있었다(자체 서명 keystore 가 tar 에 포함됨).
+                     빌드 캐시가 깨끗하다는 가정에 기대지 않고 여기서 막는다. -->
+                <exclude>conf/*.p12</exclude>
+                <exclude>conf/*.jks</exclude>
+                <exclude>conf/flow.json.gz</exclude>
+                <exclude>conf/flow.xml.gz</exclude>
+                <exclude>conf/users.xml</exclude>
+                <exclude>conf/authorizations.xml</exclude>
+                <exclude>conf/archive/**</exclude>
+                <exclude>logs/**</exclude>
+                <exclude>work/**</exclude>
+                <exclude>run/**</exclude>
+                <exclude>state/**</exclude>
+                <exclude>*_repository/**</exclude>
             </excludes>
         </fileSet>
         <fileSet>
@@ -55,10 +72,29 @@
             <directory>${project.build.directory}/sql/db-iaa/db</directory>
             <outputDirectory>sql/db-iaa</outputDirectory>
         </fileSet>
+        <!-- 설정 TUI. bin/argus-config.sh 가 이 경로를 참조한다.
+             python3 없이 빌드하면 이 디렉터리가 비어 있을 수 있다 -->
+        <fileSet>
+            <directory>${project.build.directory}/tools/argus-config</directory>
+            <outputDirectory>tools/argus-config</outputDirectory>
+            <fileMode>0755</fileMode>
+        </fileSet>
         <!-- 사용자 관리 CLI. bin/argus-user.sh 가 이 경로를 참조한다 -->
         <fileSet>
             <directory>${project.build.directory}/tools/argus-user</directory>
             <outputDirectory>tools/argus-user</outputDirectory>
         </fileSet>
     </fileSets>
+
+    <files>
+        <!-- 인증서 생성 스크립트. 소스의 scripts/ssl/ 을 정본으로 두고 조립 시점에
+             가져온다 — 복사본을 만들면 반드시 갈라진다.
+             argus-config.sh 의 tls:generate 레시피가 이 경로를 안내한다. -->
+        <file>
+            <source>${project.basedir}/../scripts/ssl/ssl-generate-openssl.sh</source>
+            <outputDirectory>bin</outputDirectory>
+            <destName>argus-ssl.sh</destName>
+            <fileMode>0755</fileMode>
+        </file>
+    </files>
 </assembly>
