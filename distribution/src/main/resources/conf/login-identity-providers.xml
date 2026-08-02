@@ -138,4 +138,34 @@
         <property name="Authentication Expiration">12 hours</property>
     </provider>
     To enable the kerberos-provider remove 2 lines. This is 2 of 2. -->
+    <!--
+        DB 기반 인증 (Argus Flow 확장).
+
+        비밀번호를 RDB 에서 관리한다. authorizers.xml 의 db-user-group-provider 와 함께
+        써야 한다 — 이 프로바이더는 비밀번호 검증만 하고, 사용자가 NiFi 에 존재하는지는
+        인가 쪽 UserGroupProvider 가 판단한다.
+
+        활성화하려면 이 주석을 해제하고 nifi.properties 에서
+        nifi.security.user.login.identity.provider=db-provider 로 지정한다.
+        사용자 추가와 비밀번호 설정은 bin/argus-user.sh 를 쓴다.
+
+        비밀번호 변경과 계정 잠금은 즉시 반영된다(인증은 캐시하지 않는다).
+    -->
+    <!--
+    <provider>
+        <identifier>db-provider</identifier>
+        <class>io.datadynamics.nifi.iaa.db.DbLoginIdentityProvider</class>
+        <property name="Database URL">jdbc:postgresql://localhost:5432/nifi</property>
+        <property name="Database Driver Class Name">org.postgresql.Driver</property>
+        <property name="Database Driver Location"></property>
+        <property name="Database User">nifi</property>
+        <property name="Database Password"></property>
+        <property name="Max Connections">4</property>
+        <property name="Auto Create Schema">false</property>
+        <property name="Authentication Expiration">12 hours</property>
+        <property name="Max Failed Attempts">5</property>
+        <property name="Lockout Duration">15 mins</property>
+    </provider>
+    -->
+
 </loginIdentityProviders>

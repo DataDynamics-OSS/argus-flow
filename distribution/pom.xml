@@ -146,6 +146,19 @@
             <version>${nifi.version}</version>
             <type>nar</type>
         </dependency>
+        <!-- DB 기반 인증·인가 프로바이더 -->
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-db-iaa-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <!-- 사용자 관리 CLI. NAR 이 아니라 실행 jar 이므로 tools/argus-user/ 로 따로 복사한다 -->
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-db-iaa-cli</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -165,6 +178,44 @@
                             <includeTypes>nar</includeTypes>
                             <excludeTransitive>true</excludeTransitive>
                             <outputDirectory>${project.build.directory}/nars</outputDirectory>
+                        </configuration>
+                    </execution>
+                    <!-- 스키마 DDL 정본은 providers jar 안에 있다. DBA 가 직접 적용하는
+                         경우를 위해 배포본에도 꺼내 둔다(설계상 자동 적용은 기본 비활성). -->
+                    <execution>
+                        <id>unpack-db-iaa-sql</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>unpack</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>io.datadynamics.nifi</groupId>
+                                    <artifactId>nifi-argus-db-iaa-providers</artifactId>
+                                    <version>${project.version}</version>
+                                    <includes>db/**</includes>
+                                    <outputDirectory>${project.build.directory}/sql/db-iaa</outputDirectory>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>copy-user-cli</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>io.datadynamics.nifi</groupId>
+                                    <artifactId>nifi-argus-db-iaa-cli</artifactId>
+                                    <version>${project.version}</version>
+                                    <destFileName>argus-user-cli.jar</destFileName>
+                                </artifactItem>
+                            </artifactItems>
+                            <outputDirectory>${project.build.directory}/tools/argus-user</outputDirectory>
                         </configuration>
                     </execution>
                 </executions>

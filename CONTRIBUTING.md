@@ -92,6 +92,21 @@ make nifi-config-test  # conf 설정 CLI 단위 테스트
 번들의 NOTICE를 이관하고 앞에 파생 사실을 밝힙니다. 자체 구현이라면 저작권과 주요 제3자
 구성요소를 적습니다. 기존 번들의 NOTICE를 참고하십시오.
 
+### DB 스키마를 바꿀 때
+
+`nifi-argus-db-iaa` 확장의 스키마 정본은
+`nifi-extensions/nifi-argus-db-iaa-bundle/nifi-argus-db-iaa-providers/src/main/resources/db/`
+에 있습니다. 배포본의 `sql/db-iaa/`는 여기서 복사됩니다.
+
+- **방언 세 벌을 모두 고치십시오** — `postgresql`, `mariadb`, `h2`. h2는 테스트 전용이지만
+  단위 테스트가 이 파일을 그대로 적용하므로 어긋나면 테스트가 먼저 깨집니다.
+- **DDL은 멱등이어야 합니다.** `argus-user.sh schema-init`은 여러 번 실행될 수 있습니다.
+- 스키마를 바꾸면 `V<n+1>__<설명>.sql`을 추가하고 `SchemaManager.REQUIRED_VERSION`을
+  올리십시오. 기존 `V1__baseline.sql`은 고치지 마십시오 — 이미 적용된 설치본이 있습니다.
+- 방언별 함정이 있습니다. MariaDB는 `ENGINE=InnoDB`가 없으면 FK가 생기지 않고, 기본
+  collation이 대소문자를 구분하지 않아 `utf8mb4_bin`이 필요하며, `TIMESTAMP` 컬럼에는
+  암묵적 `ON UPDATE CURRENT_TIMESTAMP`가 붙습니다. 실제 엔진으로 확인하십시오.
+
 ## 코드 스타일
 
 - Java 21, 들여쓰기 4칸. 기존 파일의 스타일을 따릅니다.

@@ -18,7 +18,7 @@ Argus Flow는 Apache NiFi 2.10.0을 실제 운영 환경에 올리는 데 필요
 
 | 경로 | 내용 | 빌드 |
 |---|---|---|
-| `nifi-extensions/` | NiFi 확장 번들 — 레거시 재편성(standard / db / kudu / parquet / record-serialization / hive / reporting) + 신규·포팅(debezium CDC / deltalake / iceberg) | Maven, Java 21 |
+| `nifi-extensions/` | NiFi 확장 번들 — 레거시 재편성(standard / db / kudu / parquet / record-serialization / hive / reporting) + 신규·포팅(debezium CDC / deltalake / iceberg / db-iaa) | Maven, Java 21 |
 | `distribution/` | 공식 NiFi 바이너리 재패키징 → tar.gz, RPM | Maven `-Pdist`, nfpm |
 | `operator/` | NiFi 2.x K8s 오퍼레이터 (Python, kopf) | pip + pytest |
 | `charts/` | Helm 차트 | helm |
@@ -27,7 +27,12 @@ Argus Flow는 Apache NiFi 2.10.0을 실제 운영 환경에 올리는 데 필요
 | `scripts/ssl/` | 인증서 생성 스크립트 | — |
 
 확장은 도메인별 번들로 나뉘고 번들마다 독립된 NAR로 패키징되므로, 서드파티 의존성이
-번들 경계를 넘어 충돌하지 않습니다. 현재 11개 번들에서 17개의 NAR이 만들어집니다.
+번들 경계를 넘어 충돌하지 않습니다. 현재 12개 번들에서 18개의 NAR이 만들어집니다.
+
+`db-iaa` 번들은 성격이 조금 다릅니다. 프로세서가 아니라 **NiFi의 인증·인가 프로바이더**로,
+사용자와 비밀번호를 RDB에서 관리합니다. LDAP도 외부 IdP도 도입할 수 없는 환경에서
+`users.xml`을 손으로 고치는 대신 쓰라고 만든 것입니다. 기본값은 비활성(설정 파일에 주석
+처리)이며, 사용자 관리는 `bin/argus-user.sh`로 합니다.
 
 ## 빌드
 
@@ -68,9 +73,9 @@ TLS 키스토어 비밀번호, NiFi 관리자 자격증명, 민감 속성 암호
 것입니다. standard, db, kudu, parquet, record-serialization, hive, reporting, iceberg가
 여기에 해당합니다. 이렇게 파생된 파일은 원본의 ASF 라이선스 헤더를 그대로 유지하고, 어느
 업스트림 파일에서 왔는지 밝힌 변경 고지를 덧붙였습니다. 각 NAR에도 파생 원본 번들의
-`META-INF/NOTICE`를 함께 담았습니다. 반면 debezium, deltalake, flow-analysis 번들은
-업스트림에 대응하는 원본 없이 새로 구현한 것입니다. 전체 귀속 내역은 [NOTICE](NOTICE)에
-정리되어 있습니다.
+`META-INF/NOTICE`를 함께 담았습니다. 반면 debezium, deltalake, flow-analysis, db-iaa
+번들은 업스트림에 대응하는 원본 없이 새로 구현한 것입니다. 전체 귀속 내역은
+[NOTICE](NOTICE)에 정리되어 있습니다.
 
 `distribution/`은 공식 NiFi 바이너리를 내려받아 재패키징하고, 컨테이너 이미지는 공식
 `apache/nifi` 이미지를 베이스로 사용합니다. 어느 쪽도 이 저장소에 벤더링하지 않고 빌드
@@ -79,6 +84,11 @@ TLS 키스토어 비밀번호, NiFi 관리자 자격증명, 민감 속성 암호
 Cloudera JDBC 드라이버는 이 저장소에 포함되어 있지 않습니다. `VendorHive3ConnectionPool`을
 사용하려면 드라이버를 직접 받아 NiFi의 `lib/` 디렉터리에 배치해야 하며, 해당 드라이버는
 벤더가 정한 라이선스를 따릅니다.
+
+같은 이유로 **MariaDB Connector/J도 포함하지 않습니다.** `db-iaa` 확장은 MariaDB를
+지원하지만 드라이버가 LGPL-2.1이라 재배포하지 않습니다. 필요하면 직접 받아
+`Database Driver Location` 속성으로 경로를 지정하십시오. PostgreSQL 드라이버(BSD)는
+번들되어 있습니다.
 
 ## 기여 · 라이선스
 

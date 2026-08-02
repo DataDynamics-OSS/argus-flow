@@ -48,7 +48,8 @@ The derivation takes three forms:
 
    The following bundles are original works of Data Dynamics Inc. and are not
    derived from Apache NiFi source: nifi-argus-debezium-bundle,
-   nifi-argus-deltalake-bundle, nifi-argus-flow-analysis-bundle.
+   nifi-argus-deltalake-bundle, nifi-argus-flow-analysis-bundle,
+   nifi-argus-db-iaa-bundle.
 
 2. Redistributed binaries.
    The `distribution/` module repackages the official Apache NiFi 2.10.0 binary
@@ -78,6 +79,22 @@ bundled into each extension. Notable items:
 * Apache Iceberg, Apache Hive, Apache Hadoop, Apache Parquet, Apache ORC,
   Apache Avro, Apache Calcite, Apache Kudu, Apache ZooKeeper (all Apache-2.0)
   Bundled into the corresponding extension NARs.
+
+* PostgreSQL JDBC Driver (BSD) — https://jdbc.postgresql.org/
+  Bundled into the nifi-argus-db-iaa NAR and the argus-user CLI, which use it
+  as the default driver for the database-backed identity providers.
+
+* HikariCP (Apache-2.0) — https://github.com/brettwooldridge/HikariCP
+  bcrypt (Apache-2.0) — https://github.com/patrickfav/bcrypt
+  Bundled into the nifi-argus-db-iaa NAR and the argus-user CLI. The bcrypt
+  library and $2b$ hash format match those used by Apache NiFi's single-user
+  login provider, so credentials created by either are interchangeable.
+
+* MariaDB Connector/J — NOT bundled and NOT distributed.
+  The database-backed identity providers support MariaDB, but the driver is
+  licensed under the LGPL-2.1 and is not redistributed here. Users who need it
+  must obtain the driver themselves and point the "Database Driver Location"
+  property at their copy; it remains subject to its own license terms.
 
 * Cloudera JDBC Connector for Apache Hive — NOT bundled and NOT distributed.
   `VendorHive3ConnectionPool` references the driver class

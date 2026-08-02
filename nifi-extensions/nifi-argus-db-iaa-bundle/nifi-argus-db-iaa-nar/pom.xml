@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright 2026 Data Dynamics Inc.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.datadynamics.nifi</groupId>
+        <artifactId>nifi-argus-db-iaa-bundle</artifactId>
+        <version>2.10.0-1</version>
+    </parent>
+
+    <artifactId>nifi-argus-db-iaa-nar</artifactId>
+    <packaging>nar</packaging>
+
+    <name>Argus Flow :: DB IAA :: db-iaa-nar</name>
+
+    <!-- 부모 NAR 을 두지 않는다. 업스트림의 single-user·LDAP IAA NAR 도 독립형이다
+         (MANIFEST 에 Nar-Dependency-Id 가 없음을 확인). 인증·인가 프로바이더는 NiFi 가
+         프레임워크 클래스로더로 로드하므로 다른 NAR 에 의존할 필요가 없다. -->
+    <dependencies>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-db-iaa-providers</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+</project>

@@ -11,6 +11,16 @@
 ### Added
 - Apache License 2.0으로 공개. `LICENSE`, `NOTICE`, `CONTRIBUTING.md`, `SECURITY.md` 추가.
 - `apache-rat-plugin` 기반 라이선스 헤더 검사를 빌드(`validate` 단계)와 CI에 추가.
+- **DB 기반 인증·인가 확장** (`nifi-argus-db-iaa`) — 사용자와 비밀번호를 RDB에서 관리합니다.
+  `DbLoginIdentityProvider`(인증)와 `DbUserGroupProvider`(인가)를 함께 제공하며, NiFi UI에서
+  사용자·그룹을 관리할 수 있습니다. PostgreSQL과 MariaDB를 지원하고, PostgreSQL 드라이버만
+  번들합니다(MariaDB Connector/J는 LGPL-2.1이라 미포함 — 직접 조달).
+  두 프로바이더 블록은 `conf/authorizers.xml`·`conf/login-identity-providers.xml`에
+  **주석 처리된 상태**로 배포됩니다.
+- **사용자 관리 CLI** (`bin/argus-user.sh`) — 사용자·그룹 추가/삭제/변경, 비밀번호 설정,
+  계정 잠금 해제, 스키마 적용. NiFi가 떠 있는 상태에서도 사용할 수 있습니다.
+  비밀번호는 인자로 받지 않습니다(프롬프트 또는 `--password-stdin`).
+- 스키마 DDL을 배포본 `sql/db-iaa/`에 노출 — DDL 권한을 애플리케이션에 주지 않는 환경용.
 - `scripts/ssl/ssl-generate-openssl.sh` — SAN에 DNS 이름과 IP 주소를 명시 지정하는
   openssl 기반 인증서 생성기. CA 100년 / 서버 10년(각각 `NIFI_SSL_CA_DAYS`,
   `NIFI_SSL_DAYS`로 조정). IP로 NiFi에 접속할 때 발생하는 `Invalid SNI` 해결용.

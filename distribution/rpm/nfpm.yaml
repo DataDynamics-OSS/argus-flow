@@ -28,6 +28,9 @@ contents:
   - src: ../target/rpmroot/dist/conf/login-identity-providers.xml
     dst: /opt/argus-flow/nifi/conf/login-identity-providers.xml
     type: config|noreplace
+  - src: ../target/rpmroot/dist/conf/authorizers.xml
+    dst: /opt/argus-flow/nifi/conf/authorizers.xml
+    type: config|noreplace
   # NOTE: 그 외 conf/ 하위 per-file noreplace 지정은 오버레이 표준값 확정 시 추가
   #       (디렉터리 entry와 중복 dst가 되지 않도록 개별 파일 entry로 지정할 것)
 

@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright 2026 Data Dynamics Inc.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.datadynamics.nifi</groupId>
+        <artifactId>nifi-argus-db-iaa-bundle</artifactId>
+        <version>2.10.0-1</version>
+    </parent>
+
+    <artifactId>nifi-argus-db-iaa-cli</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Argus Flow :: DB IAA :: CLI</name>
+    <description>사용자 관리 CLI. NIFI_HOME/bin/argus-user.sh 가 실행한다</description>
+
+    <dependencies>
+        <!-- DAO·PasswordEncoder·스키마를 프로바이더와 공유한다. 해시 방식이나 스키마 접근이
+             CLI 와 프로바이더에서 갈리면 "CLI 로 만든 사용자로 로그인이 안 되는" 사고가 난다. -->
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-db-iaa-providers</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- 프로바이더에서는 provided 지만 CLI 는 NiFi 밖에서 단독 실행되므로 번들해야 한다.
+             부모(nifi-extension-bundles)가 slf4j-api 를 provided 로 관리하므로 scope 를
+             명시하지 않으면 shade 에서 빠져 HikariCP 초기화가 NoClassDefFoundError 로 죽는다. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <version>2.0.18</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>2.4.240</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- 단일 실행 jar. 번들 대상(bcrypt, HikariCP, PostgreSQL 드라이버)이 모두
+                 permissive 라 shade 에 제약이 없다. MariaDB 드라이버는 LGPL-2.1 이라
+                 배포하지 않으므로 사용자가 클래스패스로 덧붙인다. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <!-- finalName 을 두지 않는다 — shade 가 주 아티팩트를 대체하게 해야
+                                 distribution 의 dependency-plugin 이 좌표로 집어올 수 있다.
+                                 배포 시 argus-user-cli.jar 로 이름을 바꾼다. -->
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>io.datadynamics.nifi.iaa.db.cli.ArgusUserCommand</mainClass>
+                                </transformer>
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

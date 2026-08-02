@@ -1,0 +1,17 @@
+nifi-argus-db-iaa-nar
+Copyright 2026 Data Dynamics Inc.
+
+This product includes software developed at
+Data Dynamics Inc. (https://www.data-dynamics.io/).
+
+This product depends on Apache NiFi (https://nifi.apache.org/) extension APIs,
+Copyright The Apache Software Foundation, licensed under the Apache License 2.0.
+
+It also depends on:
+  * PostgreSQL JDBC Driver (BSD), https://jdbc.postgresql.org/
+  * HikariCP (Apache License 2.0), https://github.com/brettwooldridge/HikariCP
+  * bcrypt (Apache License 2.0), https://github.com/patrickfav/bcrypt
+
+MariaDB Connector/J is NOT bundled and NOT distributed. To use MariaDB, obtain
+the driver separately and point the "Database Driver Location" property at it.
+That driver is licensed under the LGPL-2.1 and is subject to its own terms.

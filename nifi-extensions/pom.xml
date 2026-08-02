@@ -52,6 +52,7 @@
         <module>nifi-argus-debezium-bundle</module>
         <module>nifi-argus-deltalake-bundle</module>
         <module>nifi-argus-flow-analysis-bundle</module>
+        <module>nifi-argus-db-iaa-bundle</module>
     </modules>
 
     <dependencyManagement>

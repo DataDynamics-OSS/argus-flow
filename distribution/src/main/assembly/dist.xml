@@ -19,6 +19,7 @@
                 <exclude>bin/**</exclude>
                 <!-- conf 오버레이로 교체하는 파일이 생기면 여기에 exclude 추가 (conf/README.md 참조) -->
                 <exclude>conf/login-identity-providers.xml</exclude>
+                <exclude>conf/authorizers.xml</exclude>
             </excludes>
         </fileSet>
         <fileSet>
@@ -47,6 +48,17 @@
             <excludes>
                 <exclude>README.md</exclude>
             </excludes>
+        </fileSet>
+        <!-- DB 인증·인가 스키마 DDL. 애플리케이션에 DDL 권한을 주지 않는 환경에서
+             DBA 가 직접 적용한다 -->
+        <fileSet>
+            <directory>${project.build.directory}/sql/db-iaa/db</directory>
+            <outputDirectory>sql/db-iaa</outputDirectory>
+        </fileSet>
+        <!-- 사용자 관리 CLI. bin/argus-user.sh 가 이 경로를 참조한다 -->
+        <fileSet>
+            <directory>${project.build.directory}/tools/argus-user</directory>
+            <outputDirectory>tools/argus-user</outputDirectory>
         </fileSet>
     </fileSets>
 </assembly>
