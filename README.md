@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Apache NiFi](https://img.shields.io/badge/Apache%20NiFi-2.10.0-green.svg)](https://nifi.apache.org/)
 
-Argus Flow는 Apache NiFi 2.10.0을 실제 운영 환경에 올리는 데 필요한 것들을 한곳에 모은
+Argus Flow는 Apache NiFi 2을 실제 운영 환경에 올리는 데 필요한 것들을 한곳에 모은
 모노레포입니다. 커스텀 확장 번들(NAR)과 배포 패키지(tar.gz, RPM, 컨테이너 이미지),
 그리고 Kubernetes 오퍼레이터를 함께 담고 있습니다.
 
@@ -111,15 +111,10 @@ TLS 키스토어 비밀번호, NiFi 관리자 자격증명, 민감 속성 암호
 
 ## Apache NiFi와의 관계
 
-`nifi-extensions/`의 여러 번들은 Apache NiFi 1.28.0의 소스를 가져와 NiFi 2.10용으로 개작한
-것입니다. standard, db, kudu, parquet, record-serialization, hive, reporting, iceberg가
-여기에 해당합니다. 이렇게 파생된 파일은 원본의 ASF 라이선스 헤더를 그대로 유지하고, 어느
-업스트림 파일에서 왔는지 밝힌 변경 고지를 덧붙였습니다. 각 NAR에도 파생 원본 번들의
-`META-INF/NOTICE`를 함께 담았습니다. 반면 debezium, deltalake, flow-analysis, db-iaa
-번들은 업스트림에 대응하는 원본 없이 새로 구현한 것입니다. 전체 귀속 내역은
-[NOTICE](NOTICE)에 정리되어 있습니다.
+`nifi-extensions/`의 여러 번들은 Apache NiFi의 구버전과 Data Dynamics에서 자체 갭라한 소스코드를 NiFi 2.x용으로 개발한
+것입니다. 
 
-`distribution/`은 공식 NiFi 바이너리를 내려받아 재패키징하고, 컨테이너 이미지는 공식
+그리고 `distribution/`은 공식 NiFi 바이너리를 내려받아 재패키징하고, 컨테이너 이미지는 공식
 `apache/nifi` 이미지를 베이스로 사용합니다. 어느 쪽도 이 저장소에 벤더링하지 않고 빌드
 시점에 버전을 고정해 가져옵니다.
 
