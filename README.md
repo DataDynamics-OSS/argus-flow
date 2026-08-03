@@ -111,8 +111,8 @@ TLS 키스토어 비밀번호, NiFi 관리자 자격증명, 민감 속성 암호
 
 ## Apache NiFi와의 관계
 
-`nifi-extensions/`의 여러 번들은 Apache NiFi의 구버전과 Data Dynamics에서 자체 갭라한 소스코드를 NiFi 2.x용으로 개발한
-것입니다. 
+`nifi-extensions/`의 여러 번들은 Apache NiFi의 구버전과 Data Dynamics에서 자체 개발한 소스코드를 NiFi 2.x용으로 개발한
+것입니다. 각종 편의도구 및 인증기능 개선, TUX 형식의 설정 도구, Kubernetes Operator 등을 모두 포함합니다.
 
 그리고 `distribution/`은 공식 NiFi 바이너리를 내려받아 재패키징하고, 컨테이너 이미지는 공식
 `apache/nifi` 이미지를 베이스로 사용합니다. 어느 쪽도 이 저장소에 벤더링하지 않고 빌드
