@@ -9,6 +9,23 @@
 ## [Unreleased]
 
 ### Added
+- **트리거형 List 프로세서** (`nifi-argus-listing`) — `ListFile`, `ListSFTP`, `ListFTP`, `ListS3`,
+  `ListHDFS`(패키지 `io.datadynamics.nifi.processors.listing.*`). NiFi 2.10.0의 List 프로세서를 포크해 Upstream
+  연결을 받도록(INPUT_REQUIRED) 바꿨습니다. 입력 FlowFile마다 그 속성으로 정한 대상 하나를 List하고,
+  결과를 입력의 자식으로 `success`에, 입력을 `original`에, 실패를 `failure`에 보냅니다.
+  - 추적 전략은 대상별로 분리됩니다: `No Tracking`(기본), `Tracking Timestamps`(CLUSTER 상태, CAS 저장),
+    `Tracking Entities`(DistributedMapCache).
+  - 추적 상태의 키에는 대상과 함께 결과에 영향을 주는 설정(필터·재귀·파일 나이·크기 등)이 들어가, 필터를 바꾸면
+    같은 경로라도 처음부터 다시 List합니다. 대상·필터·전략을 바꾸면 다음 시작 시 추적 상태와 캐시 항목을 지웁니다
+    (업스트림의 속성 변경 시 상태 초기화와 같은 시점). `Maximum Tracked Targets`를 넘은 오래된 대상의 상태와
+    캐시 항목도 지웁니다.
+  - FlowFile이 대상을 정하므로 허용 범위를 제한하는 속성을 둡니다: `Allowed Base Directory`
+    (File 필수, HDFS 선택), `Allowed Hosts`(SFTP/FTP), `Allowed Buckets`(S3). 결과 폭증을 막는
+    `Maximum Listing Size`도 있습니다.
+  - `@PrimaryNodeOnly`가 없어 클러스터의 모든 노드가 각자 받은 FlowFile을 처리합니다.
+  - `scripts/port-listing.py`가 업스트림 원문에 이름만 바꾼 기준본을 재현합니다(업그레이드 시 3-way 병합용).
+- `ListingScheduleGuardRule`이 트리거형 List 프로세서(`io.datadynamics.nifi.processors.listing.*`)는 검사하지
+  않습니다. 단순 클래스명이 업스트림과 같지만 입력이 있을 때만 실행되어 0초 스케줄이 정상입니다.
 - Apache License 2.0으로 공개. `LICENSE`, `NOTICE`, `CONTRIBUTING.md`, `SECURITY.md` 추가.
 - `apache-rat-plugin` 기반 라이선스 헤더 검사를 빌드(`validate` 단계)와 CI에 추가.
 - **설정 도구를 배포본에 포함** (`bin/argus-config.sh`) — `conf/` 를 대화형(TUI)으로

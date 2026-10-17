@@ -53,6 +53,12 @@ import org.apache.nifi.scheduling.SchedulingStrategy;
 @CapabilityDescription("리스팅 계열 프로세서가 Run Schedule 0초(Timer-Driven)로 설정되면 소스 과부하 위험으로 위반을 표시한다.")
 public class ListingScheduleGuardRule extends AbstractFlowAnalysisRule {
 
+    /**
+     * 트리거형 List 프로세서(nifi-argus-listing) 패키지. 업스트림과 단순 클래스명이 같지만 입력 FlowFile 이 있을 때만
+     * 실행되므로 0초 스케줄이 정상이다 — 검사에서 뺀다.
+     */
+    static final String TRIGGERED_LISTING_PACKAGE = "io.datadynamics.nifi.processors.listing.";
+
     /** 기본 검사 대상 — NiFi 표준 리스팅 프로세서들의 단순 클래스명. */
     private static final List<String> DEFAULT_LISTING_PROCESSORS = List.of(
             "ListFile", "ListFTP", "ListSFTP", "ListHDFS",
@@ -91,7 +97,7 @@ public class ListingScheduleGuardRule extends AbstractFlowAnalysisRule {
                 .collect(Collectors.toSet());
 
         final String simpleType = simpleType(processor);
-        if (!targets.contains(simpleType)) {
+        if (!targets.contains(simpleType) || isTriggeredListing(processor)) {
             return results;
         }
 
@@ -120,6 +126,11 @@ public class ListingScheduleGuardRule extends AbstractFlowAnalysisRule {
 
     private static boolean startsWithZero(String schedulingPeriod) {
         return schedulingPeriod != null && schedulingPeriod.trim().startsWith("0");
+    }
+
+    private static boolean isTriggeredListing(VersionedProcessor processor) {
+        final String type = processor.getType();
+        return type != null && type.startsWith(TRIGGERED_LISTING_PACKAGE);
     }
 
     private static String simpleType(VersionedProcessor processor) {

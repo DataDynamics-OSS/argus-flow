@@ -1,0 +1,3 @@
+io.datadynamics.nifi.processors.listing.file.ListFile
+io.datadynamics.nifi.processors.listing.transfer.ListSFTP
+io.datadynamics.nifi.processors.listing.transfer.ListFTP

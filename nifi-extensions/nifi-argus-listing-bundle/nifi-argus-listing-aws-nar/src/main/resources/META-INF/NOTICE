@@ -1,0 +1,221 @@
+nifi-argus-listing-aws-nar
+Copyright 2026 Data Dynamics Inc.
+
+This product includes software developed at
+Data Dynamics Inc. (https://www.data-dynamics.io/).
+
+This bundle is derived from Apache NiFi (https://nifi.apache.org/) -- specifically
+the nifi-aws-nar bundle of Apache NiFi 2.10.0 -- and has been modified so that the
+listing target is resolved from incoming FlowFiles. The NOTICE distributed with that
+original bundle is reproduced in full below, as required by section 4(d) of the
+Apache License 2.0.
+
+================================================================================
+NOTICE from Apache NiFi 2.10.0 -- nifi-aws-nar
+================================================================================
+
+nifi-aws-nar
+Copyright 2015-2026 The Apache Software Foundation
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/).
+
+******************
+Apache Software License v2
+******************
+
+The following binary components are provided under the Apache Software License v2
+
+  (ASLv2) Apache HttpComponents
+    The following NOTICE information applies:
+      Apache HttpClient
+      Copyright 1999-2014 The Apache Software Foundation
+      
+      Apache HttpCore
+      Copyright 2005-2014 The Apache Software Foundation
+
+      This project contains annotations derived from JCIP-ANNOTATIONS
+      Copyright (c) 2005 Brian Goetz and Tim Peierls. See http://www.jcip.net
+
+  (ASLv2) Joda Time
+    The following NOTICE information applies:
+      This product includes software developed by
+      Joda.org (http://www.joda.org/).
+
+  (ASLv2) Apache Commons Codec
+    The following NOTICE information applies:
+      Apache Commons Codec
+      Copyright 2002-2014 The Apache Software Foundation
+
+      src/test/org/apache/commons/codec/language/DoubleMetaphoneTest.java
+      contains test data from http://aspell.net/test/orig/batch0.tab.
+      Copyright (C) 2002 Kevin Atkinson (kevina@gnu.org)
+
+      ===============================================================================
+
+      The content of package org.apache.commons.codec.language.bm has been translated
+      from the original php source code available at http://stevemorse.org/phoneticinfo.htm
+      with permission from the original authors.
+      Original source copyright:
+      Copyright (c) 2008 Alexander Beider & Stephen P. Morse.
+
+  (ASLv2) Apache Commons Lang
+    The following NOTICE information applies:
+      Apache Commons Lang
+      Copyright 2001-2014 The Apache Software Foundation
+
+      This product includes software from the Spring Framework,
+      under the Apache License 2.0 (see: StringUtils.containsWhitespace())
+
+  (ASLv2) Apache Commons IO
+    The following NOTICE information applies:
+      Apache Commons IO
+      Copyright 2002-2016 The Apache Software Foundation
+
+  (ASLv2) Apache Commons BeanUtils
+    The following NOTICE information applies:
+      Apache Commons BeanUtils
+      Copyright 2000-2016 The Apache Software Foundation
+
+      This product includes software developed at
+      The Apache Software Foundation (http://www.apache.org/).
+
+  (ASLv2) Apache Commons Compress
+    The following NOTICE information applies:
+      Apache Commons Compress
+      Copyright 2002-2017 The Apache Software Foundation
+
+      The files in the package org.apache.commons.compress.archivers.sevenz
+      were derived from the LZMA SDK, version 9.20 (C/ and CPP/7zip/),
+      which has been placed in the public domain:
+
+      "LZMA SDK is placed in the public domain." (http://www.7-zip.org/sdk.html)
+
+  (ASLv2) Apache Commons CSV
+    The following NOTICE information applies:
+      Apache Commons CSV
+      Copyright 2005-2016 The Apache Software Foundation
+
+      This product includes software developed at
+      The Apache Software Foundation (http://www.apache.org/).
+
+  (ASLv2) Apache Commons Text
+    The following NOTICE information applies:
+      Apache Commons Text
+      Copyright 2001-2018 The Apache Software Foundation
+
+  (ASLv2) Apache HttpClient
+    The following NOTICE information applies:
+      Apache HttpClient
+      Copyright 1999-2022 The Apache Software Foundation
+
+  (ASLv2) Apache HttpCore
+    The following NOTICE information applies:
+      Apache HttpCore
+      Copyright 2005-2022 The Apache Software Foundation
+
+  (ASLv2) Amazon Ion Java
+    The following NOTICE information applies:
+      Amazon Ion Java
+      Copyright 2007-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+  (ASLv2) AWS Glue Schema Registry Serializer Deserializer
+    The following NOTICE information applies:
+      AWS Glue Schema Registry Serializer Deserializer
+      Copyright 2020 Amazon.com, Inc. or its affiliates.
+    Files in package org/apache/nifi/aws/schemaregistry/serde come from library: software.amazon.schemaregistry:aws-schema-registry-serde:1.1.24
+
+  (ASLv2) Amazon Web Services SDK
+    The following NOTICE information applies:
+      Copyright 2010-2014 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+      This product includes software developed by
+      Amazon Technologies, Inc (http://www.amazon.com/).
+
+      **********************
+      THIRD PARTY COMPONENTS
+      **********************
+      This software includes third party software subject to the following copyrights:
+      - XML parsing and utility functions from JetS3t - Copyright 2006-2009 James Murty.
+      - PKCS#1 PEM encoded private key parsing and utility functions from oauth.googlecode.com - Copyright 1998-2010 AOL Inc.
+
+  (ASLv2) Jackson
+      The following NOTICE information applies:
+        Copyright 2007-, Tatu Saloranta (tatu.saloranta@iki.fi)
+
+  (ASLv2) This includes derived works from apigateway-generic-java-sdk project (https://github.com/rpgreen/apigateway-generic-java-sdk)
+  https://github.com/rpgreen/apigateway-generic-java-sdk/commit/32eea44cc855a530c9b4a28b9f3601a41bc85618 as the point reference:
+  The derived work is adapted from
+    main/ca/ryangreen/apigateway/generic/
+      GenericApiGatewayClient.java
+      GenericApiGatewayClientBuilder.java
+      GenericApiGatewayException.java
+      GenericApiGatewayRequest.java
+      GenericApiGatewayRequestBuilder.java
+    test/ca/ryangreen/apigateway/generic/
+      GenericApiGatewayClientTest.java
+      LambdaMatcher.java
+  and can be found in the directories:
+    nifi-nar-bundles/nifi-aws-bundle/nifi-aws-abstract-processors/src/main/../wag/client/
+      GenericApiGatewayClient.java
+      GenericApiGatewayClientBuilder.java
+      GenericApiGatewayException.java
+      GenericApiGatewayRequest.java
+      GenericApiGatewayRequestBuilder.java
+      Validate.java
+    nifi-nar-bundles/nifi-aws-bundle/nifi-aws-processors/src/test/../wag/
+      RequestMatcher.java
+      GetAWSGatewayApiTest.java
+
+    (ASLv2) Caffeine (com.github.ben-manes.caffeine:caffeine:jar:2.9.2 - https://github.com/ben-manes/caffeine)
+        The following NOTICE information applies:
+          Caffeine (caching library)
+          Copyright Ben Manes
+
+  (ASLv2) Error Prone Annotations
+    The following NOTICE information applies:
+      Error Prone Annotations
+      Copyright 2015 The Error Prone Authors
+
+The multi-part copy code in CopyS3Object was derived from code found in the Amazon S3 documentation. This is the specific file for reference:
+    https://github.com/awsdocs/aws-doc-sdk-examples/blob/df606a664bf2f7cfe3abc76c187e024451d0279c/java/example_code/s3/src/main/java/aws/example/s3/LowLevelMultipartCopy.java#L18
+
+    This code was provided under the terms of the Apache Software License V2 per this:
+    https://github.com/awsdocs/aws-doc-sdk-examples/blob/df606a664bf2f7cfe3abc76c187e024451d0279c/LICENSE
+
+************************
+Berkeley Software Distribution License 3-Clause
+************************
+
+The following binary components are provided under the BSD License. See project link for details.
+
+  (BSD License) Protocol Buffers (com.google.protobuf:protobuf-java:jar - https://github.com/protocolbuffers/protobuf)
+
+************************
+Eclipse Distribution License 1.0
+************************
+
+The following binary components are provided under the Eclipse Distribution License 1.0.
+
+    (EDL 1.0) Jakarta Activation API (jakarta.activation:jakarta.activation-api:jar:1.2.2)
+    (EDL 1.0) Jakarta XML Binding API (jakarta.xml.bind:jakarta.xml.bind-api:jar:2.3.3)
+
+************************
+The MIT License
+************************
+
+The following binary components are provided under the MIT License.  See project link for details.
+
+  (MIT License) Checker Qual
+    The following NOTICE information applies:
+      Copyright (c) Copyright 2004-present by the Checker Framework developers
+      All rights reserved.
+      https://www.checkerframework.org/
+
+*****************
+Public Domain
+*****************
+
+The following binary components are provided under the Creative Commons Zero license version 1.0.  See project link for details.
+
+    (CC0v1.0) Reactive Streams (org.reactivestreams:reactive-streams:jar:1.0.3 - https://github.com/reactive-streams/reactive-streams-jvm)

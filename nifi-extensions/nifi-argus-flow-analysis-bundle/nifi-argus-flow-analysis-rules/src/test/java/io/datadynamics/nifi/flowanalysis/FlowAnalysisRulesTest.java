@@ -118,6 +118,14 @@ class FlowAnalysisRulesTest {
     }
 
     @Test
+    void listingGuard_ignoresTriggeredListingWithSameSimpleName() {
+        final ListingScheduleGuardRule rule = new ListingScheduleGuardRule();
+        assertTrue(rule.analyzeComponent(
+                listProcessor("t1", "io.datadynamics.nifi.processors.listing.file.ListFile", "TIMER_DRIVEN", "0 sec"),
+                new TestContext()).isEmpty());
+    }
+
+    @Test
     void listingGuard_ignoresNonListingProcessor() {
         final ListingScheduleGuardRule rule = new ListingScheduleGuardRule();
         assertTrue(rule.analyzeComponent(

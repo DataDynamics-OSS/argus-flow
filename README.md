@@ -18,7 +18,7 @@ Argus Flow는 Apache NiFi 2을 실제 운영 환경에 올리는 데 필요한 �
 
 | 경로 | 내용 | 빌드 |
 |---|---|---|
-| `nifi-extensions/` | NiFi 확장 번들 — 레거시 재편성(standard / db / kudu / parquet / record-serialization / hive / reporting) + 신규·포팅(debezium CDC / deltalake / iceberg / db-iaa) | Maven, Java 21 |
+| `nifi-extensions/` | NiFi 확장 번들 — 레거시 재편성(standard / db / kudu / parquet / record-serialization / hive / reporting) + 신규·포팅(debezium CDC / deltalake / iceberg / db-iaa / listing) | Maven, Java 21 |
 | `distribution/` | 공식 NiFi 바이너리 재패키징 → tar.gz, RPM | Maven `-Pdist`, nfpm |
 | `operator/` | NiFi 2.x K8s 오퍼레이터 (Python, kopf) | pip + pytest |
 | `charts/` | Helm 차트 | helm |
@@ -27,7 +27,14 @@ Argus Flow는 Apache NiFi 2을 실제 운영 환경에 올리는 데 필요한 �
 | `scripts/ssl/` | 인증서 생성 스크립트 | — |
 
 확장은 도메인별 번들로 나뉘고 번들마다 독립된 NAR로 패키징되므로, 서드파티 의존성이
-번들 경계를 넘어 충돌하지 않습니다. 현재 12개 번들에서 18개의 NAR이 만들어집니다.
+번들 경계를 넘어 충돌하지 않습니다. 현재 13개 번들에서 21개의 NAR이 만들어집니다.
+
+`listing` 번들은 NiFi 기본 `ListFile`·`ListSFTP`·`ListFTP`·`ListS3`·`ListHDFS`를 포크해
+**업스트림 FlowFile을 받아 그 속성으로 List 대상(디렉터리·호스트·버킷)을 정하게** 만든 것입니다.
+원본은 Upstream 연결이 금지된 Source 프로세서라, "무엇을 List할지"를 앞 단계가 정하는 흐름을
+만들 수 없었습니다. 클래스 이름은 업스트림과 같고(`ListFile` 등) 패키지
+(`io.datadynamics.nifi.processors.listing.*`)와 번들(`nifi-argus-listing-*`)로 구분되므로, NiFi 기본
+프로세서와 나란히 쓸 수 있습니다. 프로세서 추가 화면에서는 번들 이름으로 구별하십시오.
 
 `db-iaa` 번들은 성격이 조금 다릅니다. 프로세서가 아니라 **NiFi의 인증·인가 프로바이더**로,
 사용자와 비밀번호를 RDB에서 관리합니다. LDAP도 외부 IdP도 도입할 수 없는 환경에서
