@@ -35,6 +35,9 @@ Python과 [kopf](https://kopf.readthedocs.io/)로 구현한 Apache NiFi 2.x 클�
 
 ## 빠른 시작
 
+> 처음 설치한다면 단계별 설치 가이드 [INSTALL.md](INSTALL.md)를 먼저 보세요. 이미지 빌드부터 TLS 클러스터 접속,
+> 삭제·업그레이드·문제 해결까지 순서대로 설명합니다.
+
 ### 사전 요구사항
 
 - Kubernetes 클러스터 (1.27 이상)
