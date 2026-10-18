@@ -45,15 +45,25 @@ public final class HiveTableInfo {
     }
 
     private final Map<String, String> properties;
+    private final List<String> columns;
     private final List<String> partitionColumns;
     private final String inputFormat;
     private final String tableType;
+    private final String location;
+    private final int numBuckets;
+    private final Map<String, String> parameters;
 
-    HiveTableInfo(final Map<String, String> properties, final List<String> partitionColumns, final String inputFormat, final String tableType) {
+    HiveTableInfo(final Map<String, String> properties, final List<String> columns, final List<String> partitionColumns,
+                  final String inputFormat, final String tableType, final String location, final int numBuckets,
+                  final Map<String, String> parameters) {
         this.properties = Collections.unmodifiableMap(properties);
+        this.columns = List.copyOf(columns);
         this.partitionColumns = List.copyOf(partitionColumns);
         this.inputFormat = inputFormat;
         this.tableType = tableType;
+        this.location = location;
+        this.numBuckets = numBuckets;
+        this.parameters = Collections.unmodifiableMap(parameters);
     }
 
     /**
@@ -68,9 +78,36 @@ public final class HiveTableInfo {
             }
         }
 
+        final DescribeResult describe = parseDescribe(describeRows);
+        return new HiveTableInfo(properties, describe.columns, describe.partitionColumns, describe.inputFormat, describe.tableType,
+                describe.location, describe.numBuckets, describe.parameters);
+    }
+
+    /**
+     * {@code DESCRIBE FORMATTED <t> PARTITION (...)} 결과만으로 만든다(파티션 Location·파라미터용). 테이블 속성은 비어 있다.
+     */
+    public static HiveTableInfo parseDescribe(final List<String[]> describeRows, final Map<String, String> tableProperties) {
+        final DescribeResult describe = parseDescribe(describeRows);
+        final Map<String, String> properties = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        properties.putAll(tableProperties);
+        return new HiveTableInfo(properties, describe.columns, describe.partitionColumns, describe.inputFormat, describe.tableType,
+                describe.location, describe.numBuckets, describe.parameters);
+    }
+
+    private static final class DescribeResult {
+        final List<String> columns = new ArrayList<>();
         final List<String> partitionColumns = new ArrayList<>();
-        String inputFormat = null;
-        String tableType = null;
+        final Map<String, String> parameters = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        String inputFormat;
+        String tableType;
+        String location;
+        int numBuckets = -1;
+    }
+
+    private static DescribeResult parseDescribe(final List<String[]> describeRows) {
+        final DescribeResult result = new DescribeResult();
+        // 맨 앞 컬럼 구역 → (빈 행) → # Partition Information → (빈 행) → # Detailed ... Information
+        boolean inColumnSection = true;
         boolean inPartitionSection = false;
         for (final String[] row : describeRows) {
             final String name = cell(row, 0);
@@ -82,8 +119,18 @@ public final class HiveTableInfo {
                 final String section = name.substring(1).trim().toLowerCase(Locale.ROOT);
                 if (section.equals("partition information")) {
                     inPartitionSection = true;
+                    inColumnSection = false;
                 } else if (!section.equals("col_name")) {
                     inPartitionSection = false;
+                    inColumnSection = false;
+                }
+                continue;
+            }
+            if (inColumnSection) {
+                if (name.isEmpty()) {
+                    inColumnSection = false;
+                } else {
+                    result.columns.add(name);
                 }
                 continue;
             }
@@ -91,17 +138,30 @@ public final class HiveTableInfo {
                 if (name.isEmpty()) {
                     inPartitionSection = false;
                 } else {
-                    partitionColumns.add(name);
+                    result.partitionColumns.add(name);
                 }
                 continue;
             }
-            if (name.equalsIgnoreCase("InputFormat:")) {
-                inputFormat = value;
+            if (name.isEmpty()) {
+                // Table Parameters / Partition Parameters / Storage Desc Params 의 키·값 행
+                if (value != null && !value.isEmpty()) {
+                    result.parameters.putIfAbsent(value, cell(row, 2));
+                }
+            } else if (name.equalsIgnoreCase("InputFormat:")) {
+                result.inputFormat = value;
             } else if (name.equalsIgnoreCase("Table Type:")) {
-                tableType = value;
+                result.tableType = value;
+            } else if (name.equalsIgnoreCase("Location:")) {
+                result.location = value;
+            } else if (name.equalsIgnoreCase("Num Buckets:")) {
+                try {
+                    result.numBuckets = value == null ? -1 : Integer.parseInt(value);
+                } catch (final NumberFormatException e) {
+                    result.numBuckets = -1;
+                }
             }
         }
-        return new HiveTableInfo(properties, partitionColumns, inputFormat, tableType);
+        return result;
     }
 
     private static String cell(final String[] row, final int index) {
@@ -152,5 +212,49 @@ public final class HiveTableInfo {
 
     public String tableType() {
         return tableType;
+    }
+
+    /**
+     * 파티션 컬럼을 뺀 데이터 컬럼(정의 순서).
+     */
+    public List<String> columns() {
+        return columns;
+    }
+
+    /**
+     * {@code Location:} (테이블 또는 파티션).
+     */
+    public String location() {
+        return location;
+    }
+
+    /**
+     * {@code CLUSTERED BY ... INTO N BUCKETS} 로 만든 테이블인지. Hive 3·4 의 비버킷 테이블은 {@code Num Buckets: -1}.
+     */
+    public boolean isBucketed() {
+        return numBuckets > 0;
+    }
+
+    public int numBuckets() {
+        return numBuckets;
+    }
+
+    /**
+     * {@code Table Parameters}/{@code Partition Parameters} 값(예: {@code totalSize}).
+     */
+    public String parameter(final String name) {
+        return parameters.get(name);
+    }
+
+    /**
+     * {@code totalSize} 통계(없거나 숫자가 아니면 -1).
+     */
+    public long totalSize() {
+        final String value = parameter("totalSize");
+        try {
+            return value == null ? -1L : Long.parseLong(value.trim());
+        } catch (final NumberFormatException e) {
+            return -1L;
+        }
     }
 }

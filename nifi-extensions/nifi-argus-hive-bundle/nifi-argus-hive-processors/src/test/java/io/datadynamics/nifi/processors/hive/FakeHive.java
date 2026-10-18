@@ -39,6 +39,12 @@ final class FakeHive {
         String inputFormat = "org.apache.hadoop.hive.ql.io.orc.OrcInputFormat";
         String tableType = "MANAGED_TABLE";
         long rowCount;
+        int numBuckets = -1;
+        final List<String> columns = new ArrayList<>(List.of("id"));
+        String location;
+        long totalSize = -1;
+        /** 파티션 이름(k=v/k2=v2) → Location. */
+        final Map<String, String> partitions = new LinkedHashMap<>();
     }
 
     static final class Compaction {
@@ -63,7 +69,7 @@ final class FakeHive {
     private static final Pattern PARTITION = Pattern.compile("PARTITION \\((.*)\\)");
     private static final Pattern PART_VALUE = Pattern.compile("`(\\w+)`='((?:[^'\\\\]|\\\\.)*)'");
 
-    final Version version;
+    final Version hiveVersion;
     final Map<String, Table> tables = new LinkedHashMap<>();
     final List<Compaction> compactions = new ArrayList<>();
     long nextId = 1;
@@ -73,9 +79,28 @@ final class FakeHive {
     Result compactError;
     /** CONCATENATE 뒤 행 수 변화(행 수 불일치 흉내). */
     long rowDeltaAfterCompaction;
+    /** SELECT version() 결과. */
+    String version;
+    /** 세션 설정(SET/RESET). */
+    final Map<String, String> session = new LinkedHashMap<>();
+    final Map<String, String> sessionDefaults = new LinkedHashMap<>();
+    /** 마지막 INSERT OVERWRITE 때의 mapreduce.job.reduces. */
+    String rewriteReducers;
+    /** INSERT OVERWRITE 때의 세션 설정 사본. */
+    Map<String, String> rewriteSession;
+    /** INSERT OVERWRITE 실행 시 던질 오류. */
+    Result rewriteError;
 
     FakeHive(final Version version) {
-        this.version = version;
+        this.hiveVersion = version;
+        this.version = version == Version.HIVE4 ? "4.0.1 r3af4517eb8cfd9407ad34ed78a0b48b57dfaa264" : "3.1.3 r4df4d75bf1e16fe0af75aad0b4179c34c07fc975";
+        sessionDefaults.put("hive.compute.query.using.stats", "true");
+        sessionDefaults.put("hive.tez.auto.reducer.parallelism", "false");
+        sessionDefaults.put("mapreduce.job.reduces", "-1");
+        sessionDefaults.put("hive.merge.tezfiles", "false");
+        sessionDefaults.put("hive.merge.mapfiles", "true");
+        sessionDefaults.put("hive.merge.mapredfiles", "false");
+        session.putAll(sessionDefaults);
     }
 
     Table acidTable(final String qualified, final String... partitionColumns) {
@@ -109,7 +134,26 @@ final class FakeHive {
     }
 
     Result handle(final String sql) {
+        if (sql.equals("SELECT version()")) {
+            return Result.rows(List.of("_c0"), List.of(List.of(version)));
+        }
         if (sql.startsWith("SET ")) {
+            final String body = sql.substring(4).trim();
+            final int eq = body.indexOf('=');
+            if (eq > 0) {
+                session.put(body.substring(0, eq), body.substring(eq + 1));
+                return Result.none();
+            }
+            final String value = session.get(body);
+            return Result.rows(List.of("set"), List.of(List.of(value == null ? body + " is undefined" : body + "=" + value)));
+        }
+        if (sql.startsWith("RESET ")) {
+            final String key = sql.substring(6).trim();
+            if (sessionDefaults.containsKey(key)) {
+                session.put(key, sessionDefaults.get(key));
+            } else {
+                session.remove(key);
+            }
             return Result.none();
         }
         if (sql.equals("SHOW COMPACTIONS")) {
@@ -131,7 +175,34 @@ final class FakeHive {
             return Result.rows(List.of("prpt_name", "prpt_value"), rows);
         }
         if (sql.startsWith("DESCRIBE FORMATTED")) {
-            return describe(db, table);
+            final String partition = partitionName(sql);
+            if (partition != null) {
+                final String location = table.partitions.get(partition);
+                if (location == null) {
+                    return Result.error("Partition not found {" + partition + "}", 10006);
+                }
+                return describe(db, table, location);
+            }
+            return describe(db, table, table.location);
+        }
+        if (sql.startsWith("SHOW PARTITIONS")) {
+            final String filter = partitionName(sql);
+            final List<List<String>> rows = new ArrayList<>();
+            for (final String name : table.partitions.keySet()) {
+                if (filter == null || List.of(name.split("/")).containsAll(List.of(filter.split("/")))) {
+                    rows.add(List.of(name));
+                }
+            }
+            return Result.rows(List.of("partition"), rows);
+        }
+        if (sql.startsWith("INSERT OVERWRITE")) {
+            if (rewriteError != null) {
+                return rewriteError;
+            }
+            rewriteReducers = session.get("mapreduce.job.reduces");
+            rewriteSession = new LinkedHashMap<>(session);
+            table.rowCount += rowDeltaAfterCompaction;
+            return Result.none();
         }
         if (sql.startsWith("SELECT COUNT(*)")) {
             return Result.rows(List.of("_c0"), List.of(List.of(Long.toString(table.rowCount))));
@@ -145,11 +216,12 @@ final class FakeHive {
                 return compactError;
             }
             final String partition = partitionName(sql);
-            final String type = sql.substring(sql.lastIndexOf("COMPACT '") + 9, sql.length() - 1).toUpperCase(Locale.ROOT);
+            final int start = sql.lastIndexOf("COMPACT '") + 9;
+            final String type = sql.substring(start, sql.indexOf('\'', start)).toUpperCase(Locale.ROOT);
             for (final Compaction c : compactions) {
                 if (c.db.equals(db) && c.table.equals(tableName) && java.util.Objects.equals(c.partition, partition)
                         && (c.state.equals("initiated") || c.state.equals("working"))) {
-                    if (version == Version.HIVE4) {
+                    if (hiveVersion == Version.HIVE4) {
                         return Result.error("Error while compiling statement: FAILED: Execution Error, return code 10432 from "
                                 + "org.apache.hadoop.hive.ql.ddl.DDLTask. Compaction request for " + db + "." + tableName
                                 + "CompactionId: -1 is refused, details: Compaction is already scheduled with state='" + c.state
@@ -183,7 +255,7 @@ final class FakeHive {
 
     private Result showCompactions() {
         final List<List<String>> rows = new ArrayList<>();
-        if (version == Version.HIVE3) {
+        if (hiveVersion == Version.HIVE3) {
             rows.add(List.of("CompactionId", "Database", "Table", "Partition", "Type", "State", "Worker", "Start Time", "Duration(ms)", "HadoopJobId"));
             for (final Compaction c : compactions) {
                 rows.add(List.of(Long.toString(c.id), c.db, c.table, c.partition == null ? " --- " : c.partition, c.type, c.state,
@@ -202,10 +274,12 @@ final class FakeHive {
                 "txnid", "nexttxnid", "committime", "hightestwriteid"), rows);
     }
 
-    private static Result describe(final String db, final Table table) {
+    private static Result describe(final String db, final Table table, final String location) {
         final List<List<String>> rows = new ArrayList<>();
         rows.add(List.of("# col_name            ", "data_type           ", "comment             "));
-        rows.add(List.of("id                  ", "int                 ", ""));
+        for (final String column : table.columns) {
+            rows.add(List.of(column + "                  ", "int                 ", ""));
+        }
         rows.add(java.util.Arrays.asList("", null, null));
         if (!table.partitionColumns.isEmpty()) {
             rows.add(java.util.Arrays.asList("# Partition Information", null, null));
@@ -217,12 +291,17 @@ final class FakeHive {
         }
         rows.add(java.util.Arrays.asList("# Detailed Table Information", null, null));
         rows.add(java.util.Arrays.asList("Database:           ", db + "             ", null));
+        rows.add(java.util.Arrays.asList("Location:           ", location, null));
         rows.add(java.util.Arrays.asList("Table Type:         ", table.tableType + "       ", null));
         rows.add(java.util.Arrays.asList("Table Parameters:", null, null));
         table.properties.forEach((k, v) -> rows.add(List.of("", k + "   ", v + "   ")));
+        if (table.totalSize >= 0) {
+            rows.add(List.of("", "totalSize           ", table.totalSize + "                "));
+        }
         rows.add(java.util.Arrays.asList("", null, null));
         rows.add(java.util.Arrays.asList("# Storage Information", null, null));
         rows.add(java.util.Arrays.asList("InputFormat:        ", table.inputFormat, null));
+        rows.add(java.util.Arrays.asList("Num Buckets:        ", table.numBuckets + "                  ", null));
         rows.add(java.util.Arrays.asList("Storage Desc Params:", null, null));
         rows.add(List.of("", "serialization.format", "1                   "));
         return Result.rows(List.of("col_name", "data_type", "comment"), rows);

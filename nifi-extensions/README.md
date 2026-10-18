@@ -10,7 +10,7 @@ Apache NiFi **2.10.0 / Java 21** 기반 커스텀 확장 번들 모음(Maven rea
 
 ---
 
-## 프로세서 (Processors) — 26종
+## 프로세서 (Processors) — 27종
 
 ### CDC 소스 — `nifi-argus-debezium-bundle`
 Debezium Embedded Engine 3.2.2 기반. 변경 이벤트를 JSON FlowFile로 방출(`@PrimaryNodeOnly`, at-least-once).
@@ -55,7 +55,8 @@ Trino JDBC 483 기반 조회·변환·유지보수(신규 구현, [사용 예제
 | `PutHive3Streaming` | Hive3 Streaming API로 스트리밍 적재 |
 | `UpdateHive3Table` | Hive3 테이블 스키마 동기화(컬럼/파티션) |
 | `TriggerHiveMetaStoreEvent` | Hive Metastore 이벤트 발생 트리거 |
-| `CompactHive3Table` | ACID 테이블 major/minor compaction(비동기 요청 + `in progress` 자기 루프로 상태 추적), Non-ACID ORC `CONCATENATE`, 전후 행 수 검증 ([사용 예제](nifi-argus-hive-bundle/README.md)) |
+| `CompactHive3Table` | ACID 테이블 major/minor compaction(비동기 요청 + `in progress` 자기 루프로 상태 추적), Non-ACID ORC `CONCATENATE`, 출력 파일 수 지정(`REBALANCE`·`REWRITE`), 전후 행 수 검증 ([사용 예제](nifi-argus-hive-bundle/README.md)) |
+| `ListHiveCompactionCandidates` | 파티션 디렉토리(base/delta 수·크기, 파일 수)를 세어 compaction이 필요한 파티션마다 FlowFile 생성(진행 중·적재 중 파티션 제외) |
 | `PutORC` | ORC 파일로 기록 |
 
 ### 파일 포맷 — `nifi-argus-parquet-bundle`

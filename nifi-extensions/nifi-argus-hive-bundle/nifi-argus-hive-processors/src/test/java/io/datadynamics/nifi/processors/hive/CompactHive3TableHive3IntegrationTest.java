@@ -57,6 +57,11 @@ class CompactHive3TableHive3IntegrationTest extends AbstractCompactionScenariosI
     }
 
     @Override
+    protected boolean supportsRebalance() {
+        return false;
+    }
+
+    @Override
     protected CompletionState majorCompletionState() {
         return CompletionState.SUCCEEDED;
     }

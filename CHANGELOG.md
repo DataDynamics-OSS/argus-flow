@@ -34,6 +34,14 @@
   - `Completion State`(`ready for cleaning`/`succeeded`), `Initiation Timeout`, `Compaction Timeout`을 지원합니다.
   - `SHOW COMPACTIONS`는 컬럼 이름으로 해석해 Hive 3.1과 Hive 4.0의 컬럼 차이를 흡수합니다. 같은 대상에 이미
     대기 중인 요청이 있으면 그 compaction을 이어서 추적합니다. Apache Hive 3.1.3·4.0.1로 검증했습니다.
+  - 출력 파일 수를 정하는 `Compaction Type` 두 가지: `REBALANCE`(Hive 4, `COMPACT 'rebalance' CLUSTERED INTO N BUCKETS`,
+    비동기)와 `REWRITE`(`INSERT OVERWRITE ... DISTRIBUTE BY <키>`를 리듀서 N개로 실행, 동기, Non-ACID·external 테이블 포함).
+    N은 `Target File Count` 또는 파티션 크기 / `Target File Size`(크기는 HDFS 디렉토리 또는 테이블 통계)로 정합니다.
+    바꾼 세션 설정(리듀서 수, 파일 병합, 통계 응답)은 끝나면(실패 포함) 원래 값으로 되돌립니다.
+- `ListHiveCompactionCandidates` (Hive 번들): 한 테이블의 파티션 디렉토리를 Hadoop FileSystem으로 세어 compaction이 필요한
+  파티션마다 FlowFile을 냅니다. ACID는 Hive Initiator와 같은 기준(delta/base 크기 비율 → MAJOR, delta 수 → MINOR),
+  Non-ACID는 작은 파일 수로 판정합니다. 적재 중일 수 있는 최근 파티션과 compaction이 진행 중인 파티션은 뺍니다.
+  출력 속성을 `CompactHive3Table`의 `${hive.compaction.partition.spec}` 등으로 바로 쓸 수 있습니다.
 - `MergeParquet`: 선택 프로퍼티 `Kerberos User Service`로 보안 HDFS를 지원합니다. 원본 경로로 일반 디렉토리를
   주면 그 안의 `*.parquet`를 병합합니다.
 - `VendorHive3ConnectionPool`: 동적 프로퍼티를 HiveConf에 반영합니다. `Max Wait Time`에 `-1`(무한 대기)을 쓸 수 있습니다.

@@ -10,7 +10,8 @@ Apache Hive 3.x 연동 확장 번들. Hive/ORC 프로세서와 Hive DBCP 커넥�
 | 프로세서 | `PutHive3Streaming` | Hive3 Streaming API 적재 |
 | 프로세서 | `UpdateHive3Table` | Hive3 테이블 스키마 동기화 |
 | 프로세서 | `TriggerHiveMetaStoreEvent` | Hive Metastore 이벤트 트리거 |
-| 프로세서 | `CompactHive3Table` | ACID 테이블 major/minor compaction 요청·상태 추적, Non-ACID ORC `CONCATENATE`, 전후 행 수 검증 |
+| 프로세서 | `CompactHive3Table` | ACID 테이블 major/minor compaction 요청·상태 추적, Non-ACID ORC `CONCATENATE`, 출력 파일 수 지정(`REBALANCE`·`REWRITE`), 전후 행 수 검증 |
+| 프로세서 | `ListHiveCompactionCandidates` | 파티션 디렉토리(base/delta, 파일 수·크기)를 세어 compaction이 필요한 파티션마다 FlowFile 생성 |
 | 프로세서 | `PutORC` | ORC 파일 기록 |
 | 컨트롤러 서비스 | `Hive3ConnectionPool` | Hive3 JDBC 커넥션 풀 |
 | 컨트롤러 서비스 | `VendorHive3ConnectionPool` | 벤더 Hive JDBC 드라이버용 커넥션 풀 (드라이버 별도 제공) |
@@ -26,7 +27,14 @@ Apache Hive 3.x 연동 확장 번들. Hive/ORC 프로세서와 Hive DBCP 커넥�
 |---|---|---|
 | Full ACID / insert-only ACID | `ALTER TABLE db.t [PARTITION (...)] COMPACT 'major'\|'minor'` (비동기, `AND WAIT` 없음) | `SHOW COMPACTIONS`의 해당 id가 `Completion State`에 도달 |
 | Non-ACID ORC (managed) | `ALTER TABLE db.t [PARTITION (...)] CONCATENATE` (동기) | 문장이 끝나면 완료 |
-| 그 밖의 Non-ACID, external ORC | 실행하지 않음 | `failure` |
+| 그 밖의 Non-ACID, external ORC | 실행하지 않음(파일 수를 줄이려면 `REWRITE`) | `failure` |
+
+`Compaction Type`으로 출력 파일 수를 정하는 두 가지를 더 고를 수 있다.
+
+| `Compaction Type` | 실행 | 대상 | 추적 |
+|---|---|---|---|
+| `REBALANCE` | `ALTER TABLE ... [PARTITION (...)] COMPACT 'rebalance' CLUSTERED INTO <N> BUCKETS` | Hive 4 이상, 버킷 없는 Full ACID | 비동기(MAJOR와 같은 `in progress` 루프) |
+| `REWRITE` | `INSERT OVERWRITE TABLE ... [PARTITION (...)] SELECT <데이터 컬럼> FROM ... [WHERE <파티션>] DISTRIBUTE BY <키>` (리듀서 N개) | ACID·Non-ACID(external 포함), 버킷 테이블 제외 | 동기(트리거 스레드에서 끝까지) |
 
 ### 동작
 
@@ -71,6 +79,42 @@ GenerateFlowFile (매일 02:00, Cron)
 - `in progress` relationship은 auto-terminate하지 말고 **자기 자신에게 연결**한다. 연결하지 않으면 추적이 끊긴다
   (요청 자체는 Hive에 남는다).
 
+### 출력 파일 수 지정 — `REBALANCE`·`REWRITE`
+
+**N(출력 파일 수)**: `Target File Count`를 주면 그 값. 없으면 `N = max(1, ceil(파티션 크기 / Target File Size))`(기본 512 MB).
+
+| `Partition Size Source` | 파티션 크기 |
+|---|---|
+| `HDFS` (기본, 권장) | 파티션 Location을 Hadoop FileSystem으로 직접 센다. ACID는 현재 base·delta만 센다. `Hive 설정 리소스`(`hive3-config-resources`: core-site.xml, hdfs-site.xml)와 보안 클러스터면 `Kerberos 사용자 서비스`가 필요하다 |
+| `TABLE_STATISTICS` | `DESCRIBE FORMATTED`의 `totalSize`. 통계가 오래됐거나 없을 수 있다(없으면 `failure`) |
+
+**REWRITE**
+
+- `Distribute By Columns`(필수): 값이 고르게 퍼진 컬럼(예: PK). Hive는 이 키의 해시로 행을 리듀서 N개에 나누므로 값 종류가 충분해야 파일이 N개 나온다.
+  `rand()` 같은 함수는 쓸 수 없다(태스크 재시도 때 행이 중복되거나 빠질 수 있다). 파티션 컬럼도 쓸 수 없다.
+- SELECT 목록은 `DESCRIBE`의 데이터 컬럼을 정의 순서대로 자동으로 만든다.
+- 세션에 `hive.tez.auto.reducer.parallelism=false`, `mapreduce.job.reduces=N`, `hive.merge.tezfiles/mapfiles/mapredfiles=false`를 걸고,
+  실행 전 값을 읽어 두었다가 끝나면(실패 포함) 원래 값으로 되돌린다(`hive.compute.query.using.stats`도 같다). 커넥션 풀이 세션을 재사용하므로
+  다른 프로세서로 설정이 새지 않게 하기 위해서다. SQL 표준 권한 모드면 이 키들이 `hive.security.authorization.sqlstd.confwhitelist`에 있어야 한다.
+- 파티션에 배타 lock을 잡고 Tez 작업이 끝날 때까지 NiFi 스레드를 쓴다. `쿼리 타임아웃`(`hive3-query-timeout`)으로 상한을 두고, 적재가 끝난 파티션에만 쓴다.
+
+**REBALANCE**
+
+- HiveServer2 버전(`SELECT version()`)이 4 미만이면 `failure`.
+- Worker 쪽 Hive 서버에 query-based compaction(`hive.compactor.crud.query.based=true`, Tez)이 켜져 있어야 한다. 꺼져 있으면 요청은 받아들여지지만
+  compaction이 `failed`("Rebalancing compaction is only supported in Tez, and via Query based compaction")로 끝나고 `failure`로 보낸다.
+- `Completion State`, Timeout 규칙은 MAJOR와 같다.
+
+```
+CompactHive3Table
+  Compaction Type        = REWRITE
+  Target File Size       = 512 MB          (또는 Target File Count = 8)
+  Partition Size Source  = HDFS
+  Hive 설정 리소스        = /etc/hadoop/conf/core-site.xml,/etc/hadoop/conf/hdfs-site.xml
+  Distribute By Columns  = order_id
+  쿼리 타임아웃           = 3600
+```
+
 ### 운영 주의
 
 - 적재가 끝난 파티션(보통 D-1 이전)만 대상으로 한다. `CONCATENATE`는 배타 lock을 잡는다.
@@ -85,11 +129,48 @@ GenerateFlowFile (매일 02:00, Cron)
 
 ### 출력 속성
 
-`hive.compaction.id`, `hive.compaction.type`(MAJOR/MINOR/CONCATENATE), `hive.compaction.state`, `hive.compaction.requested.at`(epoch ms),
+`hive.compaction.id`, `hive.compaction.type`(MAJOR/MINOR/REBALANCE/REWRITE/CONCATENATE), `hive.compaction.state`, `hive.compaction.requested.at`(epoch ms),
 `hive.compaction.duration.ms`, `hive.compaction.rowcount.before`, `hive.compaction.rowcount.after`, `hive.compaction.table`(db.table),
-`hive.compaction.partition`, `hive.compaction.error`.
+`hive.compaction.partition`, `hive.compaction.target.file.count`, `hive.compaction.partition.size.bytes`(크기로 N을 계산한 경우), `hive.compaction.error`.
 
-검증한 서버: Apache Hive 3.1.3, 4.0.1 (공식 `apache/hive` Docker 이미지, Apache `hive-jdbc` 드라이버).
+검증한 서버: Apache Hive 3.1.3, 4.0.1 (공식 `apache/hive` Docker 이미지, Apache `hive-jdbc` 드라이버). REBALANCE는 4.0.1 + query-based compaction에서 확인했다.
+
+---
+
+## `ListHiveCompactionCandidates` — compaction 대상 파티션 찾기
+
+자동 compaction(Initiator)에 맡기지 않는 테이블에서, 한 테이블의 파티션을 훑어 compaction이 필요한 파티션마다 빈 FlowFile을 하나씩 낸다.
+
+1. `SHOW PARTITIONS db.t [PARTITION (<Partition Filter>)]`로 파티션을 얻고, 파티션마다 `DESCRIBE FORMATTED ... PARTITION (...)`의 Location을
+   Hadoop FileSystem으로 센다(`hive3-config-resources`, `kerberos-user-service`).
+2. 판정
+   - ACID: Hive Initiator와 같은 기준. 현재 delta 크기 / base 크기 > `Delta Size Ratio Threshold`(기본 0.1, base가 없으면 delta가 있으면) → **MAJOR**,
+     아니면 delta + delete_delta 디렉토리 수 > `Delta Count Threshold`(기본 10) → **MINOR**. 이미 합쳐졌지만 Cleaner가 아직 지우지 않은 옛 base·delta는 세지 않는다.
+   - Non-ACID: 파일 수 > `Small File Count Threshold`(기본 10)이고 평균 파일 크기 < `Small File Size`(기본 64 MB) → managed ORC면 **CONCATENATE**, 아니면 **REWRITE**.
+3. 제외: 마지막 수정이 `Minimum Partition Age`(기본 1 hour)보다 최근인 파티션(적재 중일 수 있음), `SHOW COMPACTIONS`에서 `initiated`·`working`인 파티션.
+4. delta 수(Non-ACID는 파일 수) 내림차순으로 최대 `Maximum Candidates`(기본 100)개.
+
+출력 속성: `hive.compaction.database`, `hive.compaction.table`, `hive.compaction.partition.spec`(Partition Spec 형식), `hive.compaction.recommended.type`,
+`hive.compaction.delta.count`, `hive.compaction.delete.delta.count`, `hive.compaction.base.bytes`, `hive.compaction.delta.bytes`,
+`hive.compaction.file.count`, `hive.compaction.partition.location`. Relationships: `success`(후보마다), `original`(입력이 있을 때), `failure`.
+
+### 사용 흐름 — 매일 후보를 찾아 compaction
+
+```
+GenerateFlowFile (Cron 0 30 2 * * ?)
+  └─ ListHiveCompactionCandidates  (Database=sales, Table=events, Partition Filter 선택)
+       └─success─ RouteOnAttribute  (hive.compaction.recommended.type 별: major / minor / concatenate / rewrite)
+            ├─major──── CompactHive3Table (Compaction Type=MAJOR)  ──success──▶ (로그)
+            │             Database       = ${hive.compaction.database}
+            │             Table          = ${hive.compaction.table}
+            │             Partition Spec = ${hive.compaction.partition.spec}
+            │             in progress    → 자기 자신, Penalty Duration = 1 min
+            └─minor──── CompactHive3Table (Compaction Type=MINOR)  ... (같은 설정)
+```
+
+`Compaction Type`은 Expression Language를 지원하지 않으므로, 권장 유형별로 나누려면 `RouteOnAttribute`로 서로 다른 `CompactHive3Table`에 보낸다.
+권장 유형을 무시하고 모두 MAJOR로 처리해도 된다. `CompactHive3Table`은 처리하면서 `hive.compaction.table`을 `db.table`로 덮어쓴다.
+파티션마다 `DESCRIBE`와 디렉토리 목록을 읽으므로 파티션이 많은 테이블은 `Partition Filter`(예: 전날 `dt='${now():toNumber():minus(86400000):format('yyyy-MM-dd')}'`)로 범위를 줄인다.
 
 ---
 

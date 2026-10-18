@@ -64,4 +64,21 @@ class CompactHive3TableInitiationTimeoutIntegrationTest extends AbstractCompactH
         assertTrue(error.contains("hive.compactor.initiator.on") && error.contains("hive.compactor.worker.threads"), error);
         assertTrue(drive.elapsedMs() >= 15_000);
     }
+
+    @Test
+    void listerSkipsPartitionsWithCompactionInProgress() throws Exception {
+        awaitReady();
+        sql("CREATE TABLE it_running (id INT) PARTITIONED BY (dt STRING) STORED AS ORC TBLPROPERTIES ('transactional'='true')",
+                "INSERT INTO it_running PARTITION (dt='a') VALUES (1)", "INSERT INTO it_running PARTITION (dt='a') VALUES (2)",
+                "INSERT INTO it_running PARTITION (dt='b') VALUES (1)", "INSERT INTO it_running PARTITION (dt='b') VALUES (2)",
+                // Worker 가 없어 'initiated' 에 머문다
+                "ALTER TABLE it_running PARTITION (dt='a') COMPACT 'major'");
+        final TestRunner lister = listRunner("it_running");
+        lister.setProperty(ListHiveCompactionCandidates.MINIMUM_PARTITION_AGE, "0 sec");
+        lister.run();
+        final java.util.List<org.apache.nifi.util.MockFlowFile> candidates = lister.getFlowFilesForRelationship(ListHiveCompactionCandidates.REL_SUCCESS);
+        assertEquals(1, candidates.size());
+        candidates.get(0).assertAttributeEquals(ListHiveCompactionCandidates.ATTR_PARTITION_SPEC, "dt='b'");
+        candidates.get(0).assertAttributeEquals(ListHiveCompactionCandidates.ATTR_DELTA_COUNT, "2");
+    }
 }

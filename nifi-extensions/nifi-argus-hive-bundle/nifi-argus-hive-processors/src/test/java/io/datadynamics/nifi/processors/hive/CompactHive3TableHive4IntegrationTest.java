@@ -36,7 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CompactHive3TableHive4IntegrationTest extends AbstractCompactionScenariosIntegrationTest {
 
     @Container
-    private static final GenericContainer<?> HIVE = HiveTestContainers.hive4();
+    private static final GenericContainer<?> HIVE = HiveTestContainers.hive4(true);
 
     @Override
     protected GenericContainer<?> hive() {
@@ -62,6 +62,11 @@ class CompactHive3TableHive4IntegrationTest extends AbstractCompactionScenariosI
 
     @Override
     protected boolean duplicateCompactThrows() {
+        return true;
+    }
+
+    @Override
+    protected boolean supportsRebalance() {
         return true;
     }
 

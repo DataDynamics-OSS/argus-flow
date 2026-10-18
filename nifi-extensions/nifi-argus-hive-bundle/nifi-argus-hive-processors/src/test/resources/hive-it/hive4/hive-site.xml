@@ -16,6 +16,7 @@
 -->
 <!--
   CompactHive3Table 통합 테스트용 apache/hive:4.0.x hive-site.xml (HIVE_CUSTOM_CONF_DIR 로 덮어쓴다).
+  @WAREHOUSE_DIR@ 은 테스트가 바인드 마운트한 웨어하우스 경로로 바꿔 넣는다. @QUERY_BASED@ 는 hive.compactor.crud.query.based 값.
   앞부분은 이미지 기본값(Tez local 모드, 로컬 파일시스템 웨어하우스)과 같고, 뒷부분이 테스트용 설정이다.
 -->
 <configuration>
@@ -28,7 +29,7 @@
     <property><name>mapreduce.framework.name</name><value>local</value></property>
     <property><name>tez.local.mode</name><value>true</value></property>
     <property><name>hive.execution.engine</name><value>tez</value></property>
-    <property><name>metastore.warehouse.dir</name><value>/opt/hive/data/warehouse</value></property>
+    <property><name>metastore.warehouse.dir</name><value>@WAREHOUSE_DIR@</value></property>
     <property><name>metastore.metastore.event.db.notification.api.auth</name><value>false</value></property>
 
     <!-- ACID -->
@@ -37,6 +38,8 @@
     <!-- HiveServer2 가 compactor Worker 를 띄운다(Hive 4). 내장 Metastore 는 Initiator/Cleaner 를 띄우지 않는다. -->
     <property><name>hive.compactor.worker.threads</name><value>1</value></property>
     <property><name>hive.compactor.check.interval</name><value>5s</value></property>
+    <!-- query-based compaction (REBALANCE 에 필요) -->
+    <property><name>hive.compactor.crud.query.based</name><value>@QUERY_BASED@</value></property>
     <!-- Non-ACID managed 테이블을 EXTERNAL 로 바꾸지 않게 한다(CONCATENATE 는 managed 테이블에서만 된다) -->
     <property><name>metastore.metadata.transformer.class</name><value> </value></property>
 </configuration>

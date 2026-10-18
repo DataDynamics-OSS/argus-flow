@@ -21,11 +21,16 @@ import io.datadynamics.nifi.processors.hive.compaction.CompactionRequests;
 import io.datadynamics.nifi.processors.hive.compaction.CompactionSql;
 import io.datadynamics.nifi.processors.hive.compaction.CompactionType;
 import io.datadynamics.nifi.processors.hive.compaction.CompletionState;
+import io.datadynamics.nifi.processors.hive.compaction.FileCountPlanner;
 import io.datadynamics.nifi.processors.hive.compaction.HiveIdentifiers;
 import io.datadynamics.nifi.processors.hive.compaction.HiveTableInfo;
+import io.datadynamics.nifi.processors.hive.compaction.PartitionDirectoryScanner;
+import io.datadynamics.nifi.processors.hive.compaction.PartitionSizeSource;
 import io.datadynamics.nifi.processors.hive.compaction.PartitionSpec;
+import io.datadynamics.nifi.processors.hive.compaction.SessionOverrides;
 import io.datadynamics.nifi.processors.hive.compaction.ShowCompactionsParser;
 import io.datadynamics.nifi.processors.hive.compaction.TableTypeHandling;
+import io.datadynamics.nifi.processors.hive.util.ValidationResources;
 import io.datadynamics.nifi.services.api.hive.Hive3DBCPService;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
@@ -35,16 +40,21 @@ import org.apache.nifi.annotation.behavior.WritesAttributes;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
+import org.apache.nifi.annotation.lifecycle.OnScheduled;
+import org.apache.nifi.annotation.lifecycle.OnStopped;
+import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.components.Validator;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.kerberos.KerberosUserService;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
+import org.apache.nifi.processor.DataUnit;
 import org.apache.nifi.processor.util.StandardValidators;
 
 import java.sql.Connection;
@@ -53,6 +63,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,6 +71,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * HiveServer2 로 Hive 테이블(파티션) compaction 을 요청하고, 끝날 때까지 FlowFile 속성으로 상태를 추적한다.
@@ -79,6 +91,10 @@ import java.util.concurrent.TimeUnit;
 @CapabilityDescription("HiveServer2 로 Hive 테이블 또는 파티션의 compaction 을 실행한다. ACID 테이블(full ACID, insert-only)은 "
         + "ALTER TABLE ... COMPACT 'major'|'minor' 를 비동기로 요청하고(AND WAIT 를 쓰지 않는다) SHOW COMPACTIONS 로 상태를 추적하며, "
         + "Non-ACID ORC managed 테이블은 ALTER TABLE ... CONCATENATE 로 ORC stripe 를 병합한다(동기). "
+        + "출력 파일 수를 정하려면 Compaction Type=REBALANCE(Hive 4, COMPACT 'rebalance' CLUSTERED INTO N BUCKETS, 비동기) 또는 "
+        + "REWRITE(INSERT OVERWRITE ... DISTRIBUTE BY <키> 를 리듀서 N 개로, 동기)를 쓴다. N 은 Target File Count 또는 "
+        + "파티션 크기 / Target File Size 로 정한다. REWRITE 는 파티션에 배타 lock 을 잡고 Tez 작업이 끝날 때까지 NiFi 스레드를 쓰므로 "
+        + "hive3-query-timeout 으로 상한을 두고 적재가 끝난 파티션에만 쓴다. 바꾼 세션 설정(리듀서 수, 통계 응답 등)은 끝나면(실패 포함) 원래 값으로 되돌린다. "
         + "진행 중이면 FlowFile 을 penalize 해서 'in progress' 로 보내므로, 'in progress' 를 반드시 이 프로세서 자신에게 다시 연결해야 한다(자기 루프). "
         + "폴링 간격은 프로세서 Settings 의 Penalty Duration 이다(예: 1 min). 진행 상황은 FlowFile 속성(hive.compaction.*)에 있어 "
         + "NiFi 를 재시작해도 이어서 추적한다. 선택적으로 compaction 전후 COUNT(*)(hive.compute.query.using.stats=false)를 비교해 "
@@ -95,7 +111,9 @@ import java.util.concurrent.TimeUnit;
 })
 @WritesAttributes({
         @WritesAttribute(attribute = CompactHive3Table.ATTR_ID, description = "Hive compaction id (ACID 테이블만)."),
-        @WritesAttribute(attribute = CompactHive3Table.ATTR_TYPE, description = "MAJOR, MINOR 또는 CONCATENATE."),
+        @WritesAttribute(attribute = CompactHive3Table.ATTR_TYPE, description = "MAJOR, MINOR, REBALANCE, REWRITE 또는 CONCATENATE."),
+        @WritesAttribute(attribute = CompactHive3Table.ATTR_TARGET_FILE_COUNT, description = "REBALANCE·REWRITE 의 출력 파일(버킷·리듀서) 수 N."),
+        @WritesAttribute(attribute = CompactHive3Table.ATTR_PARTITION_SIZE_BYTES, description = "N 을 크기로 계산했을 때 쓴 파티션 크기(byte)."),
         @WritesAttribute(attribute = CompactHive3Table.ATTR_STATE, description = "마지막으로 확인한 SHOW COMPACTIONS 상태(예: initiated, working, ready for cleaning, succeeded). "
                 + "CONCATENATE 는 succeeded."),
         @WritesAttribute(attribute = CompactHive3Table.ATTR_REQUESTED_AT, description = "요청 시각(epoch ms)."),
@@ -118,6 +136,8 @@ public class CompactHive3Table extends AbstractProcessor {
     static final String ATTR_TABLE = "hive.compaction.table";
     static final String ATTR_PARTITION = "hive.compaction.partition";
     static final String ATTR_ERROR = "hive.compaction.error";
+    static final String ATTR_TARGET_FILE_COUNT = "hive.compaction.target.file.count";
+    static final String ATTR_PARTITION_SIZE_BYTES = "hive.compaction.partition.size.bytes";
 
     static final String TYPE_CONCATENATE = "CONCATENATE";
 
@@ -228,9 +248,69 @@ public class CompactHive3Table extends AbstractProcessor {
 
     static final PropertyDescriptor QUERY_TIMEOUT = AbstractHive3QLProcessor.QUERY_TIMEOUT;
 
+    static final PropertyDescriptor TARGET_FILE_COUNT = new PropertyDescriptor.Builder()
+            .name("Target File Count")
+            .displayName("출력 파일 수")
+            .description("REBALANCE 의 버킷 수·REWRITE 의 리듀서 수 N 을 직접 정한다. 지정하면 Target File Size 와 Partition Size Source 는 쓰지 않는다.")
+            .required(false)
+            .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
+            .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+            .dependsOn(COMPACTION_TYPE, CompactionType.REBALANCE, CompactionType.REWRITE)
+            .build();
+
+    static final PropertyDescriptor TARGET_FILE_SIZE = new PropertyDescriptor.Builder()
+            .name("Target File Size")
+            .displayName("목표 파일 크기")
+            .description("Target File Count 가 없을 때 N = max(1, ceil(파티션 크기 / 목표 파일 크기)). 압축된 파티션 크기 기준이다.")
+            .required(true)
+            .defaultValue("512 MB")
+            .addValidator(StandardValidators.DATA_SIZE_VALIDATOR)
+            .dependsOn(COMPACTION_TYPE, CompactionType.REBALANCE, CompactionType.REWRITE)
+            .build();
+
+    static final PropertyDescriptor PARTITION_SIZE_SOURCE = new PropertyDescriptor.Builder()
+            .name("Partition Size Source")
+            .displayName("파티션 크기 출처")
+            .description("Target File Size 로 N 을 계산할 때 파티션 크기를 얻는 곳.")
+            .required(true)
+            .allowableValues(PartitionSizeSource.class)
+            .defaultValue(PartitionSizeSource.HDFS)
+            .dependsOn(COMPACTION_TYPE, CompactionType.REBALANCE, CompactionType.REWRITE)
+            .build();
+
+    static final PropertyDescriptor HIVE_CONFIGURATION_RESOURCES = new PropertyDescriptor.Builder()
+            .fromPropertyDescriptor(PutHive3Streaming.HIVE_CONFIGURATION_RESOURCES)
+            .description("파티션 디렉토리를 읽을 Hadoop 설정(core-site.xml, hdfs-site.xml, hive-site.xml) 파일 목록(쉼표 구분). "
+                    + "비우면 클래스패스의 설정이나 기본값(로컬 파일시스템)을 쓴다. Kerberos 를 쓰려면 이 설정에 hadoop.security.authentication=kerberos 가 있어야 한다.")
+            .dependsOn(PARTITION_SIZE_SOURCE, PartitionSizeSource.HDFS)
+            .build();
+
+    static final PropertyDescriptor KERBEROS_USER_SERVICE = new PropertyDescriptor.Builder()
+            .fromPropertyDescriptor(PutHive3Streaming.KERBEROS_USER_SERVICE)
+            .dependsOn(PARTITION_SIZE_SOURCE, PartitionSizeSource.HDFS)
+            .build();
+
+    static final PropertyDescriptor DISTRIBUTE_BY_COLUMNS = new PropertyDescriptor.Builder()
+            .name("Distribute By Columns")
+            .displayName("분배 키 컬럼")
+            .description("REWRITE 의 DISTRIBUTE BY 키(쉼표 구분 컬럼 이름). 값이 고르게 퍼진 컬럼(예: PK)을 쓴다. 값 종류가 N 보다 적으면 파일이 N 개보다 적게 나온다. "
+                    + "rand() 같은 함수는 쓸 수 없다(태스크 재시도 때 행이 중복되거나 빠질 수 있다). 파티션 컬럼은 쓸 수 없다.")
+            .required(true)
+            .addValidator(StandardValidators.NON_BLANK_VALIDATOR)
+            .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+            .dependsOn(COMPACTION_TYPE, CompactionType.REWRITE)
+            .build();
+
     private static final List<PropertyDescriptor> PROPERTIES = List.of(HIVE_DBCP_SERVICE, DATABASE, TABLE, PARTITION_SPEC,
-            COMPACTION_TYPE, TABLE_TYPE_HANDLING, VALIDATE_ROW_COUNT, COMPLETION_STATE, INITIATION_TIMEOUT, COMPACTION_TIMEOUT,
+            COMPACTION_TYPE, TARGET_FILE_COUNT, TARGET_FILE_SIZE, PARTITION_SIZE_SOURCE, HIVE_CONFIGURATION_RESOURCES, KERBEROS_USER_SERVICE,
+            DISTRIBUTE_BY_COLUMNS, TABLE_TYPE_HANDLING, VALIDATE_ROW_COUNT, COMPLETION_STATE, INITIATION_TIMEOUT, COMPACTION_TIMEOUT,
             QUERY_TIMEOUT);
+
+    /** REWRITE 가 바꾸는 세션 설정(리듀서 수 = 출력 파일 수, 파일 병합 끔). */
+    static final List<String> REWRITE_MERGE_SETTINGS = List.of("hive.merge.tezfiles", "hive.merge.mapfiles", "hive.merge.mapredfiles");
+
+    private final AtomicReference<ValidationResources> validationResourceHolder = new AtomicReference<>();
+    private volatile HiveFileSystemAccess fileSystemAccess;
 
     private static final Set<Relationship> RELATIONSHIPS = Set.of(REL_SUCCESS, REL_IN_PROGRESS, REL_COUNT_MISMATCH, REL_FAILURE);
 
@@ -253,6 +333,49 @@ public class CompactHive3Table extends AbstractProcessor {
         return RELATIONSHIPS;
     }
 
+    private static boolean resizes(final CompactionType type) {
+        return type == CompactionType.REBALANCE || type == CompactionType.REWRITE;
+    }
+
+    private static boolean sizesFromHdfs(final CompactionType type, final PartitionSizeSource source) {
+        return (type == CompactionType.REBALANCE || type == CompactionType.REWRITE) && source == PartitionSizeSource.HDFS;
+    }
+
+    @Override
+    protected Collection<ValidationResult> customValidate(final ValidationContext validationContext) {
+        final List<ValidationResult> results = new ArrayList<>();
+        final CompactionType type = validationContext.getProperty(COMPACTION_TYPE).asAllowableValue(CompactionType.class);
+        if (resizes(type) && sizesFromHdfs(type, validationContext.getProperty(PARTITION_SIZE_SOURCE).asAllowableValue(PartitionSizeSource.class))
+                && validationContext.getProperty(HIVE_CONFIGURATION_RESOURCES).isSet()) {
+            final KerberosUserService kerberosUserService = validationContext.getProperty(KERBEROS_USER_SERVICE).asControllerService(KerberosUserService.class);
+            final String configFiles = validationContext.getProperty(HIVE_CONFIGURATION_RESOURCES).evaluateAttributeExpressions().getValue();
+            results.addAll(new HiveConfigurator().validate(configFiles, kerberosUserService, validationResourceHolder, getLogger()));
+        }
+        return results;
+    }
+
+    /**
+     * 크기로 N 을 정하는 REBALANCE·REWRITE 이고 출처가 HDFS 면 Hadoop FileSystem 접근을 준비한다(Kerberos 로그인 포함).
+     */
+    @OnScheduled
+    public void setup(final ProcessContext context) {
+        final CompactionType type = context.getProperty(COMPACTION_TYPE).asAllowableValue(CompactionType.class);
+        if (resizes(type) && sizesFromHdfs(type, context.getProperty(PARTITION_SIZE_SOURCE).asAllowableValue(PartitionSizeSource.class))) {
+            fileSystemAccess = HiveFileSystemAccess.open(context.getProperty(HIVE_CONFIGURATION_RESOURCES).evaluateAttributeExpressions().getValue(),
+                    context.getProperty(KERBEROS_USER_SERVICE).asControllerService(KerberosUserService.class), getLogger());
+        }
+    }
+
+    @OnStopped
+    public void shutdown() {
+        validationResourceHolder.set(null);
+        final HiveFileSystemAccess access = fileSystemAccess;
+        fileSystemAccess = null;
+        if (access != null) {
+            access.close();
+        }
+    }
+
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
         final FlowFile flowFile = session.get();
@@ -272,11 +395,15 @@ public class CompactHive3Table extends AbstractProcessor {
         }
         final Job job = new Job(context, session, flowFile, dbcpService);
         try (connection) {
-            final String existingId = flowFile.getAttribute(ATTR_ID);
-            if (existingId != null && !existingId.isBlank()) {
-                job.checkStatus(connection, existingId.trim());
-            } else {
-                job.start(connection);
+            try {
+                final String existingId = flowFile.getAttribute(ATTR_ID);
+                if (existingId != null && !existingId.isBlank()) {
+                    job.checkStatus(connection, existingId.trim());
+                } else {
+                    job.start(connection);
+                }
+            } finally {
+                job.restoreSession(connection);
             }
         } catch (final JobFailure e) {
             job.fail(e.getMessage(), e.getCause());
@@ -319,6 +446,7 @@ public class CompactHive3Table extends AbstractProcessor {
         private final Map<String, String> attributes = new HashMap<>();
         private final int queryTimeout;
         private final boolean validateRowCount;
+        private final SessionOverrides sessionOverrides = new SessionOverrides();
         private FlowFile flowFile;
 
         Job(final ProcessContext context, final ProcessSession session, final FlowFile flowFile, final Hive3DBCPService dbcpService) {
@@ -341,8 +469,16 @@ public class CompactHive3Table extends AbstractProcessor {
             // ① 판별
             final HiveTableInfo info = describe(connection, target);
             checkPartition(target, info);
-            final String type = resolveType(info);
+            final String type = resolveType(connection, info);
             attributes.put(ATTR_TYPE, type);
+            final int fileCount;
+            if (CompactionType.REWRITE.name().equals(type) || CompactionType.REBALANCE.name().equals(type)) {
+                fileCount = planFileCount(connection, target, info);
+                attributes.put(ATTR_TARGET_FILE_COUNT, Integer.toString(fileCount));
+            } else {
+                fileCount = 0;
+            }
+            final List<String> distributeBy = CompactionType.REWRITE.name().equals(type) ? distributeByColumns(info) : List.of();
 
             // ② 사전 행 수
             if (validateRowCount) {
@@ -360,10 +496,16 @@ public class CompactHive3Table extends AbstractProcessor {
                 complete(connection, target, requestedAt);
                 return;
             }
+            if (CompactionType.REWRITE.name().equals(type)) {
+                rewrite(connection, target, info, fileCount, distributeBy, requestedAt);
+                return;
+            }
 
             final CompactionType compactionType = CompactionType.valueOf(type);
             final long maxIdBefore = CompactionRequests.maxId(showCompactions(connection), target.database(), target.table(), target.spec());
-            final String sql = CompactionSql.compact(target.database(), target.table(), target.spec(), compactionType);
+            final String sql = compactionType == CompactionType.REBALANCE
+                    ? CompactionSql.rebalance(target.database(), target.table(), target.spec(), fileCount)
+                    : CompactionSql.compact(target.database(), target.table(), target.spec(), compactionType);
             OptionalLong existingId = OptionalLong.empty();
             try {
                 execute(connection, sql);
@@ -418,9 +560,11 @@ public class CompactHive3Table extends AbstractProcessor {
                 return;
             }
             if (phase == CompactionPhase.FAILED) {
+                final boolean rebalance = "REBALANCE".equalsIgnoreCase(record.type());
                 throw new JobFailure("compaction id " + record.id() + " 이(가) '" + record.state() + "' 상태로 끝났다"
                         + (record.errorMessage() == null ? "" : ": " + record.errorMessage())
-                        + ". Hive Metastore·HiveServer2 로그(compactor Worker)를 확인한다");
+                        + ". Hive Metastore·HiveServer2 로그(compactor Worker)를 확인한다"
+                        + (rebalance ? ". REBALANCE 는 Worker 쪽 Hive 서버에 hive.compactor.crud.query.based=true 와 Tez 가 필요하다" : ""));
             }
             final long elapsed = clock.millis() - requestedAt;
             final long initiationTimeout = context.getProperty(INITIATION_TIMEOUT).asTimePeriod(TimeUnit.MILLISECONDS);
@@ -527,28 +671,199 @@ public class CompactHive3Table extends AbstractProcessor {
             }
         }
 
-        private String resolveType(final HiveTableInfo info) throws JobFailure {
+        private String resolveType(final Connection connection, final HiveTableInfo info) throws JobFailure {
             final TableTypeHandling handling = context.getProperty(TABLE_TYPE_HANDLING).asAllowableValue(TableTypeHandling.class);
+            final CompactionType configured = context.getProperty(COMPACTION_TYPE).asAllowableValue(CompactionType.class);
             final String table = attributes.get(ATTR_TABLE);
+            if (!info.isAcid() && handling == TableTypeHandling.ACID_ONLY) {
+                throw new JobFailure(table + " 은(는) 트랜잭션(ACID) 테이블이 아니다(Table Type Handling=ACID_ONLY)");
+            }
+            if (configured == CompactionType.REWRITE) {
+                if (info.isBucketed()) {
+                    throw new JobFailure(table + " 은(는) 버킷 테이블(" + info.numBuckets() + " buckets)이라 파일 수가 버킷 수로 고정돼 REWRITE 할 수 없다");
+                }
+                return CompactionType.REWRITE.name();
+            }
+            if (configured == CompactionType.REBALANCE) {
+                if (info.kind() != HiveTableInfo.Kind.FULL_ACID) {
+                    throw new JobFailure(table + " 은(는) Full ACID 테이블이 아니다(" + info.kind() + "). REBALANCE 는 Full ACID 테이블만 된다");
+                }
+                if (info.isBucketed()) {
+                    throw new JobFailure(table + " 은(는) 버킷 테이블(" + info.numBuckets() + " buckets)이라 REBALANCE 할 수 없다");
+                }
+                requireHive4(connection);
+                return CompactionType.REBALANCE.name();
+            }
             switch (info.kind()) {
                 case FULL_ACID:
                 case INSERT_ONLY_ACID:
-                    return context.getProperty(COMPACTION_TYPE).asAllowableValue(CompactionType.class).name();
+                    return configured.name();
                 case NON_ACID_ORC:
-                    if (handling == TableTypeHandling.ACID_ONLY) {
-                        throw new JobFailure(table + " 은(는) 트랜잭션(ACID) 테이블이 아니다(Table Type Handling=ACID_ONLY)");
-                    }
                     if (!info.isManaged()) {
                         throw new JobFailure(table + " 은(는) Non-ACID ORC " + info.tableType() + " 이다. CONCATENATE 는 managed 테이블에서만 된다"
-                                + "(Hive 4 는 Non-ACID managed 테이블을 EXTERNAL 로 바꿔 만들 수 있다)");
+                                + "(Hive 4 는 Non-ACID managed 테이블을 EXTERNAL 로 바꿔 만들 수 있다). 파일 수를 줄이려면 Compaction Type=REWRITE 를 쓴다");
                     }
                     return TYPE_CONCATENATE;
                 default:
-                    if (handling == TableTypeHandling.ACID_ONLY) {
-                        throw new JobFailure(table + " 은(는) 트랜잭션(ACID) 테이블이 아니다(Table Type Handling=ACID_ONLY)");
-                    }
                     throw new JobFailure(table + " 은(는) Non-ACID 테이블이고 ORC 가 아니어서(InputFormat=" + info.inputFormat()
-                            + ") compaction·CONCATENATE 를 지원하지 않는다");
+                            + ") MAJOR·MINOR·CONCATENATE 를 지원하지 않는다. 파일 수를 줄이려면 Compaction Type=REWRITE 를 쓴다");
+            }
+        }
+
+        private void requireHive4(final Connection connection) throws JobFailure {
+            final String version;
+            try {
+                final List<String[]> rows = query(connection, CompactionSql.SELECT_VERSION);
+                version = rows.isEmpty() || rows.get(0).length == 0 ? null : rows.get(0)[0];
+            } catch (final SQLException e) {
+                throw new JobFailure("Hive 버전을 확인하지 못했다(" + CompactionSql.SELECT_VERSION + "): " + e.getMessage(), e);
+            }
+            final int major = majorVersion(version);
+            if (major < 4) {
+                throw new JobFailure("REBALANCE 는 Hive 4 이상에서만 된다. HiveServer2 버전: " + version);
+            }
+        }
+
+        // ---- REBALANCE·REWRITE 출력 파일 수 ----
+
+        private int planFileCount(final Connection connection, final Target target, final HiveTableInfo info) throws JobFailure {
+            final String fixed = context.getProperty(TARGET_FILE_COUNT).evaluateAttributeExpressions(flowFile).getValue();
+            if (fixed != null && !fixed.isBlank()) {
+                try {
+                    final int count = Integer.parseInt(fixed.trim());
+                    if (count < 1) {
+                        throw new NumberFormatException();
+                    }
+                    return count;
+                } catch (final NumberFormatException e) {
+                    throw new JobFailure("Target File Count '" + fixed + "' 이(가) 1 이상의 정수가 아니다");
+                }
+            }
+            final long targetBytes = context.getProperty(TARGET_FILE_SIZE).asDataSize(DataUnit.B).longValue();
+            final PartitionSizeSource source = context.getProperty(PARTITION_SIZE_SOURCE).asAllowableValue(PartitionSizeSource.class);
+            final HiveTableInfo partition = target.spec().isEmpty() ? info : describePartition(connection, target, info);
+            final long bytes;
+            if (source == PartitionSizeSource.TABLE_STATISTICS) {
+                bytes = partition.totalSize();
+                if (bytes < 0) {
+                    throw new JobFailure(target.qualified() + " 의 totalSize 통계가 없다. ANALYZE TABLE ... COMPUTE STATISTICS 를 실행하거나 "
+                            + "Partition Size Source=HDFS 를 쓴다");
+                }
+            } else {
+                final String location = partition.location();
+                if (location == null || location.isBlank()) {
+                    throw new JobFailure(target.qualified() + " 의 Location 을 DESCRIBE FORMATTED 에서 찾지 못했다");
+                }
+                final HiveFileSystemAccess access = fileSystemAccess;
+                if (access == null) {
+                    throw new JobFailure("Hadoop FileSystem 접근이 준비되지 않았다(Partition Size Source=HDFS)");
+                }
+                try {
+                    bytes = access.doAs(location, (fs, path) -> PartitionDirectoryScanner.scan(fs, path, info.isAcid())).totalBytes();
+                } catch (final java.io.IOException e) {
+                    throw new JobFailure("파티션 디렉토리 " + location + " 크기를 읽지 못했다: " + e.getMessage(), e);
+                }
+            }
+            attributes.put(ATTR_PARTITION_SIZE_BYTES, Long.toString(bytes));
+            return FileCountPlanner.fromSize(bytes, targetBytes);
+        }
+
+        private HiveTableInfo describePartition(final Connection connection, final Target target, final HiveTableInfo info) throws JobFailure {
+            try {
+                return HiveTableInfo.parseDescribe(query(connection, CompactionSql.describeFormatted(target.database(), target.table(), target.spec())),
+                        Map.of());
+            } catch (final SQLException e) {
+                throw new JobFailure(target.qualified() + " 파티션 [" + target.spec() + "] 정보를 읽지 못했다: " + e.getMessage(), e);
+            }
+        }
+
+        // ---- REWRITE ----
+
+        private List<String> distributeByColumns(final HiveTableInfo info) throws JobFailure {
+            final String value = context.getProperty(DISTRIBUTE_BY_COLUMNS).evaluateAttributeExpressions(flowFile).getValue();
+            if (value == null || value.isBlank()) {
+                throw new JobFailure("REWRITE 에는 Distribute By Columns 가 필요하다");
+            }
+            final List<String> columns = new ArrayList<>();
+            for (final String raw : value.split(",")) {
+                final String column = raw.trim();
+                if (!HiveIdentifiers.isValid(column)) {
+                    throw new JobFailure("Distribute By Columns 의 '" + column + "' 은(는) 컬럼 이름이 아니다. rand() 같은 함수·식은 쓸 수 없다"
+                            + "(태스크 재시도 때 행이 중복되거나 빠질 수 있다)");
+                }
+                final Optional<String> match = info.columns().stream().filter(c -> c.equalsIgnoreCase(column)).findFirst();
+                if (match.isEmpty()) {
+                    throw new JobFailure("Distribute By Columns 의 '" + column + "' 은(는) " + attributes.get(ATTR_TABLE)
+                            + " 의 데이터 컬럼 " + info.columns() + " 에 없다(파티션 컬럼은 쓸 수 없다)");
+                }
+                columns.add(match.get());
+            }
+            return columns;
+        }
+
+        private void rewrite(final Connection connection, final Target target, final HiveTableInfo info, final int fileCount,
+                             final List<String> distributeBy, final long requestedAt) throws JobFailure, SQLException {
+            final String sql;
+            try {
+                sql = CompactionSql.rewrite(target.database(), target.table(), target.spec(), info.columns(), distributeBy);
+            } catch (final IllegalArgumentException e) {
+                throw new JobFailure("REWRITE SQL 을 만들지 못했다: " + e.getMessage());
+            }
+            try {
+                setSession(connection, "hive.tez.auto.reducer.parallelism", "false");
+                setSession(connection, "mapreduce.job.reduces", Integer.toString(fileCount));
+                for (final String key : REWRITE_MERGE_SETTINGS) {
+                    setSession(connection, key, "false");
+                }
+            } catch (final SQLException e) {
+                throw new JobFailure("REWRITE 세션 설정 실패(hive.security.authorization.sqlstd.confwhitelist 확인): " + e.getMessage(), e);
+            }
+            try {
+                execute(connection, sql);
+            } catch (final SQLException e) {
+                throw new JobFailure("REWRITE 실패(" + sql + "): " + e.getMessage(), e);
+            }
+            session.getProvenanceReporter().invokeRemoteProcess(flowFile, connectionUrl(), sql);
+            attributes.put(ATTR_STATE, "succeeded");
+            complete(connection, target, requestedAt);
+        }
+
+        // ---- 세션 설정 ----
+
+        private SessionOverrides.SqlRunner sqlRunner(final Connection connection) {
+            return new SessionOverrides.SqlRunner() {
+                @Override
+                public List<String> queryFirstColumn(final String sql) throws SQLException {
+                    final List<String> values = new ArrayList<>();
+                    for (final String[] row : query(connection, sql)) {
+                        values.add(row.length == 0 ? null : row[0]);
+                    }
+                    return values;
+                }
+
+                @Override
+                public void execute(final String sql) throws SQLException {
+                    Job.this.execute(connection, sql);
+                }
+            };
+        }
+
+        private void setSession(final Connection connection, final String key, final String value) throws SQLException {
+            sessionOverrides.set(sqlRunner(connection), key, value);
+        }
+
+        /**
+         * 이 FlowFile 처리에서 바꾼 세션 설정을 되돌린다(실패 포함). 실패하면 경고만 남긴다.
+         */
+        void restoreSession(final Connection connection) {
+            if (sessionOverrides.isEmpty()) {
+                return;
+            }
+            final List<String> statements = sessionOverrides.restoreStatements();
+            try {
+                sessionOverrides.restore(sqlRunner(connection));
+            } catch (final SQLException | RuntimeException e) {
+                getLogger().warn("{} 세션 설정을 되돌리지 못했다({}). 같은 커넥션을 쓰는 다른 작업에 설정이 남을 수 있다", flowFile, statements, e);
             }
         }
 
@@ -557,7 +872,7 @@ public class CompactHive3Table extends AbstractProcessor {
         private long countRows(final Connection connection, final Target target) throws JobFailure {
             final String sql = CompactionSql.countRows(target.database(), target.table(), target.spec());
             try {
-                execute(connection, CompactionSql.DISABLE_STATS_ANSWER);
+                setSession(connection, "hive.compute.query.using.stats", "false");
                 final List<String[]> rows = query(connection, sql);
                 if (rows.isEmpty() || rows.get(0).length == 0 || rows.get(0)[0] == null) {
                     throw new JobFailure("행 수 쿼리(" + sql + ")가 결과를 돌려주지 않았다");
@@ -654,6 +969,17 @@ public class CompactHive3Table extends AbstractProcessor {
             }
             session.transfer(flowFile, REL_FAILURE);
         }
+    }
+
+    /**
+     * {@code SELECT version()} 결과(예: {@code 4.0.1 r3af4517...})의 주 버전. 읽지 못하면 -1.
+     */
+    static int majorVersion(final String version) {
+        if (version == null) {
+            return -1;
+        }
+        final java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("^\\s*(\\d+)\\.").matcher(version);
+        return matcher.find() ? Integer.parseInt(matcher.group(1)) : -1;
     }
 
     private static String trim(final String value) {

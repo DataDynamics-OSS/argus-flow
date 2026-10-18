@@ -21,9 +21,14 @@
 #   COMPACTOR_ON        : Initiator/Cleaner 실행 여부 (기본 true)
 #   METASTORE_WORKERS   : Metastore 프로세스의 Worker 스레드 수 (0 이면 요청이 'initiated' 에 머문다)
 #   HS2_WORKERS         : HiveServer2 프로세스의 Worker 스레드 수 (기본 0)
+#   WAREHOUSE_DIR       : 웨어하우스 경로(기본 이미지 값 /opt/hive/data/warehouse). 테스트는 호스트 디렉토리를 같은 경로로 바인드 마운트한다.
 export HIVE_CONF_DIR=$HIVE_HOME/conf
 $HIVE_HOME/bin/schematool -dbType derby -initSchema > /tmp/schematool.log 2>&1 || { cat /tmp/schematool.log; exit 1; }
-COMMON="-Dhive.support.concurrency=true -Dhive.txn.manager=org.apache.hadoop.hive.ql.lockmgr.DbTxnManager -Dhive.compactor.check.interval=5s -Dmetastore.compactor.check.interval=5s -Dhive.compactor.cleaner.run.interval=5s -Dmetastore.compactor.cleaner.run.interval=5s"
+WAREHOUSE_OPTS=""
+if [ -n "${WAREHOUSE_DIR:-}" ]; then
+  WAREHOUSE_OPTS="-Dhive.metastore.warehouse.dir=$WAREHOUSE_DIR -Dmetastore.warehouse.dir=$WAREHOUSE_DIR"
+fi
+COMMON="$WAREHOUSE_OPTS -Dhive.support.concurrency=true -Dhive.txn.manager=org.apache.hadoop.hive.ql.lockmgr.DbTxnManager -Dhive.compactor.check.interval=5s -Dmetastore.compactor.check.interval=5s -Dhive.compactor.cleaner.run.interval=5s -Dmetastore.compactor.cleaner.run.interval=5s"
 ON=${COMPACTOR_ON:-true}
 MW=${METASTORE_WORKERS:-0}
 HW=${HS2_WORKERS:-0}

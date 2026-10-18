@@ -18,7 +18,6 @@ package io.datadynamics.nifi.processors.hive;
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
-import org.testcontainers.containers.Container.ExecResult;
 import org.testcontainers.containers.GenericContainer;
 
 import java.io.File;
@@ -30,7 +29,6 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,7 +45,6 @@ import static org.junit.jupiter.api.Assertions.fail;
  */
 abstract class AbstractCompactHive3TableIntegrationTest {
 
-    static final String WAREHOUSE = "/opt/hive/data/warehouse";
     private static final Map<String, Driver> DRIVERS = new ConcurrentHashMap<>();
     private static final Map<Class<?>, Boolean> READY = new ConcurrentHashMap<>();
 
@@ -140,11 +137,28 @@ abstract class AbstractCompactHive3TableIntegrationTest {
         }
     }
 
-    /** 웨어하우스 디렉토리의 항목(숨김 파일 제외). */
+    /** 호스트에 바인드 마운트한 웨어하우스(컨테이너 안에서도 같은 경로). */
+    protected java.nio.file.Path warehouse() {
+        return HiveTestContainers.warehouseOf(hive());
+    }
+
+    /** 웨어하우스 디렉토리의 항목(숨김 파일 제외, 정렬). */
     protected List<String> listDir(final String relativePath) throws Exception {
-        final ExecResult result = hive().execInContainer("bash", "-c", "ls -1 " + WAREHOUSE + "/" + relativePath + " 2>/dev/null");
-        return Arrays.stream(result.getStdout().split("\n")).map(String::trim).filter(s -> !s.isEmpty() && !s.startsWith("."))
-                .collect(Collectors.toList());
+        final java.nio.file.Path dir = warehouse().resolve(relativePath);
+        if (!java.nio.file.Files.isDirectory(dir)) {
+            return List.of();
+        }
+        try (java.util.stream.Stream<java.nio.file.Path> entries = java.nio.file.Files.list(dir)) {
+            return entries.map(p -> p.getFileName().toString()).filter(s -> !s.startsWith(".")).sorted().collect(Collectors.toList());
+        }
+    }
+
+    /** 가장 큰 write id 의 base 디렉토리 안 데이터 파일(숨김·_ 로 시작하는 메타 파일 제외). */
+    protected List<String> newestBaseFiles(final String partitionPath) throws Exception {
+        final String base = listDir(partitionPath).stream().filter(d -> d.startsWith("base_"))
+                .max(java.util.Comparator.comparingLong(d -> Long.parseLong(d.replaceAll("base_(\\d+).*", "$1"))))
+                .orElseThrow(() -> new AssertionError(partitionPath + " 에 base 가 없다"));
+        return listDir(partitionPath + "/" + base).stream().filter(f -> !f.startsWith("_")).collect(Collectors.toList());
     }
 
     protected static List<String> withPrefix(final List<String> entries, final String prefix) {
@@ -154,14 +168,30 @@ abstract class AbstractCompactHive3TableIntegrationTest {
     // ---- 프로세서 구동 ----
 
     protected TestRunner runner() throws Exception {
+        return runner(service());
+    }
+
+    protected TestRunner runner(final IsolatedHiveJdbcService service) throws Exception {
         final TestRunner runner = TestRunners.newTestRunner(CompactHive3Table.class);
-        final IsolatedHiveJdbcService service = service();
         runner.addControllerService("hive", service);
         runner.enableControllerService(service);
         runner.setProperty(CompactHive3Table.HIVE_DBCP_SERVICE, "hive");
         runner.setProperty(CompactHive3Table.DATABASE, "default");
         runner.setProperty(CompactHive3Table.TABLE, "${table}");
         runner.setProperty(CompactHive3Table.PARTITION_SPEC, "${spec}");
+        return runner;
+    }
+
+    /** ListHiveCompactionCandidates 러너(입력 없음, 스케줄 실행). */
+    protected TestRunner listRunner(final String table) throws Exception {
+        final TestRunner runner = TestRunners.newTestRunner(ListHiveCompactionCandidates.class);
+        final IsolatedHiveJdbcService service = service();
+        runner.addControllerService("hive", service);
+        runner.enableControllerService(service);
+        runner.setProperty(ListHiveCompactionCandidates.HIVE_DBCP_SERVICE, "hive");
+        runner.setProperty(ListHiveCompactionCandidates.DATABASE, "default");
+        runner.setProperty(ListHiveCompactionCandidates.TABLE, table);
+        runner.setIncomingConnection(false);
         return runner;
     }
 

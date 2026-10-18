@@ -37,6 +37,8 @@ class IsolatedHiveJdbcService extends AbstractControllerService implements Hive3
 
     private final Driver driver;
     private final String url;
+    /** 공유 모드면 모든 getConnection 이 이 커넥션(같은 HiveServer2 세션)을 돌려준다. close 는 무시한다. */
+    private volatile Connection shared;
 
     IsolatedHiveJdbcService(final Driver driver, final String url) {
         this.driver = driver;
@@ -64,8 +66,30 @@ class IsolatedHiveJdbcService extends AbstractControllerService implements Hive3
         return connection;
     }
 
+    /**
+     * 커넥션 풀처럼 같은 세션을 재사용하게 한다(세션 설정 복원 확인용). 돌려준 커넥션의 close 는 아무것도 하지 않는다.
+     */
+    Connection shareOneConnection() throws SQLException {
+        final Connection real = connect();
+        shared = (Connection) java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{Connection.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("close")) {
+                        return null;
+                    }
+                    try {
+                        return method.invoke(real, args);
+                    } catch (final java.lang.reflect.InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                });
+        return real;
+    }
+
     @Override
     public Connection getConnection() throws ProcessException {
+        if (shared != null) {
+            return shared;
+        }
         try {
             return connect();
         } catch (final SQLException e) {

@@ -15,7 +15,9 @@
  */
 package io.datadynamics.nifi.processors.hive.compaction;
 
+import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 
 /**
  * {@code CompactHive3Table} 이 실행하는 HiveQL 을 만든다. 식별자는 {@link HiveIdentifiers} 로 검증·인용하고,
@@ -23,10 +25,9 @@ import java.util.Locale;
  */
 public final class CompactionSql {
 
-    /** 통계 기반 COUNT(*) 응답을 끈다. 켜 두면 행 수 검증이 무의미하다. */
-    public static final String DISABLE_STATS_ANSWER = "SET hive.compute.query.using.stats=false";
-
     public static final String SHOW_COMPACTIONS = "SHOW COMPACTIONS";
+
+    public static final String SELECT_VERSION = "SELECT version()";
 
     private CompactionSql() {
     }
@@ -53,9 +54,61 @@ public final class CompactionSql {
 
     /**
      * {@code ALTER TABLE ... [PARTITION (...)] COMPACT 'major'|'minor'}. {@code AND WAIT} 는 쓰지 않는다.
+     *
+     * @throws IllegalArgumentException REBALANCE·REWRITE (각각 {@link #rebalance}, {@link #rewrite})
      */
     public static String compact(final String database, final String table, final PartitionSpec spec, final CompactionType type) {
+        if (type != CompactionType.MAJOR && type != CompactionType.MINOR) {
+            throw new IllegalArgumentException(type + " 는 COMPACT 'major'|'minor' 가 아니다");
+        }
         return "ALTER TABLE " + qualifiedName(database, table) + partition(spec) + " COMPACT '" + type.name().toLowerCase(Locale.ROOT) + "'";
+    }
+
+    /**
+     * {@code ALTER TABLE ... [PARTITION (...)] COMPACT 'rebalance' CLUSTERED INTO N BUCKETS} (Hive 4).
+     */
+    public static String rebalance(final String database, final String table, final PartitionSpec spec, final int buckets) {
+        if (buckets < 1) {
+            throw new IllegalArgumentException("버킷 수는 1 이상이어야 한다: " + buckets);
+        }
+        return "ALTER TABLE " + qualifiedName(database, table) + partition(spec) + " COMPACT 'rebalance' CLUSTERED INTO " + buckets + " BUCKETS";
+    }
+
+    /**
+     * {@code INSERT OVERWRITE TABLE t [PARTITION (...)] SELECT <데이터 컬럼> FROM t [WHERE <파티션>] DISTRIBUTE BY <키>}.
+     * 출력 파일 수는 세션의 리듀서 수({@code mapreduce.job.reduces})가 정한다.
+     *
+     * @param columns      파티션 컬럼을 뺀 데이터 컬럼(정의 순서)
+     * @param distributeBy 분배 키 컬럼(식별자만, 함수·{@code rand()} 불가)
+     */
+    public static String rewrite(final String database, final String table, final PartitionSpec spec, final List<String> columns,
+                                 final List<String> distributeBy) {
+        if (columns.isEmpty()) {
+            throw new IllegalArgumentException("SELECT 할 데이터 컬럼이 없다");
+        }
+        if (distributeBy.isEmpty()) {
+            throw new IllegalArgumentException("Distribute By Columns 가 비었다");
+        }
+        final String qualified = qualifiedName(database, table);
+        final String select = columns.stream().map(c -> HiveIdentifiers.quote("컬럼", c)).collect(Collectors.joining(", "));
+        final String distribute = distributeBy.stream().map(c -> HiveIdentifiers.quote("Distribute By 컬럼", c)).collect(Collectors.joining(", "));
+        final String where = spec.toWhereClause();
+        return "INSERT OVERWRITE TABLE " + qualified + partition(spec) + " SELECT " + select + " FROM " + qualified
+                + (where.isEmpty() ? "" : " " + where) + " DISTRIBUTE BY " + distribute;
+    }
+
+    /**
+     * {@code DESCRIBE FORMATTED t PARTITION (...)}. 빈 지정이면 테이블 DESCRIBE.
+     */
+    public static String describeFormatted(final String database, final String table, final PartitionSpec spec) {
+        return describeFormatted(database, table) + partition(spec);
+    }
+
+    /**
+     * {@code SHOW PARTITIONS t [PARTITION (부분 지정)]}.
+     */
+    public static String showPartitions(final String database, final String table, final PartitionSpec filter) {
+        return "SHOW PARTITIONS " + qualifiedName(database, table) + partition(filter);
     }
 
     /**

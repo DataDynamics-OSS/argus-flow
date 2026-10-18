@@ -114,6 +114,36 @@ public final class PartitionSpec {
         return new PartitionSpec(values);
     }
 
+    /**
+     * Hive 파티션 이름({@code SHOW PARTITIONS} 결과, {@code k=v/k2=v2}, 경로 이스케이프 {@code %XX})에서 만든다.
+     *
+     * @throws IllegalArgumentException 형식 오류 또는 키가 식별자 규칙 위반
+     */
+    public static PartitionSpec fromPartitionName(final String partitionName) {
+        if (partitionName == null || partitionName.isBlank()) {
+            return EMPTY;
+        }
+        final LinkedHashMap<String, String> values = new LinkedHashMap<>();
+        for (final String part : partitionName.trim().split("/")) {
+            final int eq = part.indexOf('=');
+            if (eq <= 0) {
+                throw new IllegalArgumentException("파티션 이름 형식이 아니다: " + partitionName);
+            }
+            final String key = unescapePathName(part.substring(0, eq)).toLowerCase(Locale.ROOT);
+            HiveIdentifiers.require("파티션 키", key);
+            values.put(key, unescapePathName(part.substring(eq + 1)));
+        }
+        return new PartitionSpec(values);
+    }
+
+    /**
+     * 키가 모두 주어진 파티션 컬럼에 있는지(부분 지정 허용, 대소문자 무시) 본다.
+     */
+    public boolean isSubsetOf(final List<String> partitionColumns) {
+        final Set<String> columns = partitionColumns.stream().map(c -> c.toLowerCase(Locale.ROOT)).collect(Collectors.toSet());
+        return columns.containsAll(values.keySet());
+    }
+
     private static int skipWhitespace(final String s, int i) {
         while (i < s.length() && Character.isWhitespace(s.charAt(i))) {
             i++;
