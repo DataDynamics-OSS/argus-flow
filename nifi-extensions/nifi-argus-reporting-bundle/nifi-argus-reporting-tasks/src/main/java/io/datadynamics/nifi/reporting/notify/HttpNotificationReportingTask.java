@@ -252,14 +252,23 @@ public class HttpNotificationReportingTask extends AbstractReportingTask {
         return params;
     }
 
-    // 현재 JVM의 Thread 관련 통계(활성/피크/데몬 개수, CPU 사용 시간, ThreadGroup별 개수 등)를 수집하여 Map으로 반환한다.
+    // JVM 프로세스 전체 CPU 사용 시간(나노초). com.sun.management 확장을 지원하지 않는 JVM이면 -1을 반환한다.
+    private static long getProcessCpuTime() {
+        if (ManagementFactory.getOperatingSystemMXBean() instanceof com.sun.management.OperatingSystemMXBean os) {
+            return os.getProcessCpuTime();
+        }
+        return -1L;
+    }
+
+    // 현재 JVM의 Thread 관련 통계(활성/피크/데몬 개수, 프로세스 CPU 사용 시간, ThreadGroup별 개수 등)를 수집하여 Map으로 반환한다.
     public static Map<String, Object> getThreadCount() {
         final Map<String, Object> params = new HashMap<>();
         params.put("activeThread", Thread.activeCount());
         params.put("peakThreadCount", ManagementFactory.getThreadMXBean().getPeakThreadCount());
         params.put("daemonThreadCount", ManagementFactory.getThreadMXBean().getDaemonThreadCount());
-        params.put("currentThreadUserTime", ManagementFactory.getThreadMXBean().getCurrentThreadUserTime());
-        params.put("currentThreadCpuTime", ManagementFactory.getThreadMXBean().getCurrentThreadCpuTime());
+        // currentThreadCpuTime/currentThreadUserTime은 Reporting Task 자신의 스레드 값이라 의미가 없어 제거하고,
+        // MonitorThreadReportingTask와 같이 JVM 프로세스 전체 CPU 시간(나노초, 지원하지 않으면 -1)을 대신 전달한다.
+        params.put("processCpuTime", getProcessCpuTime());
         params.put("threadCount", ManagementFactory.getThreadMXBean().getThreadCount());
 
         final Map<Thread, StackTraceElement[]> threadMap = Thread.getAllStackTraces();

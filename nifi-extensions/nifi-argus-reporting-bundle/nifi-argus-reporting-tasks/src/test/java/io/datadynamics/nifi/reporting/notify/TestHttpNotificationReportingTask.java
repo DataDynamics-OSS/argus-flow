@@ -85,6 +85,11 @@ public class TestHttpNotificationReportingTask {
             assertTrue(json.get("jvmMetricsInclude").asBoolean());
             assertNotNull(json.get("jvmHeap"));
             assertNotNull(json.get("jvmThread"));
+            // MonitorThreadReportingTask와 같은 키: Reporting Task 자신의 스레드 CPU 시간 대신 프로세스 전체 CPU 시간을 보낸다.
+            final JsonNode jvmThread = json.get("jvmThread");
+            assertTrue(jvmThread.has("processCpuTime"));
+            assertFalse(jvmThread.has("currentThreadCpuTime"));
+            assertFalse(jvmThread.has("currentThreadUserTime"));
 
             assertEquals("HEALTH_CHECK", received.headers().get(HttpNotificationReportingTask.NOTIFICATION_TYPE_KEY.toLowerCase()).get(0));
         }

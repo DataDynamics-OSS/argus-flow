@@ -5,7 +5,7 @@ SAN 불일치로 인한 `Invalid SNI`, IP 접속 실패, 자동 생성 인증서
 DB 설정 불일치.
 
 인증서 파싱에 `cryptography` 를 쓰지 않는다. 네이티브 확장이 있어 zipapp 단일 파일 배포가
-성립하지 않기 때문이다(design/config-tool-packaging.md §2.1). 대신 openssl 을 호출하고,
+성립하지 않기 때문이다. 대신 openssl 을 호출하고,
 없으면 해당 항목만 건너뛴다.
 """
 

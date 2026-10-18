@@ -69,11 +69,18 @@
             <artifactId>nifi-hadoop-record-utils</artifactId>
             <version>${nifi.version}</version>
         </dependency>
-        <!-- upstream parquet 공용 코드 재사용: ParquetUtils/ParquetConfig/NifiParquetOutputFile/AvroParquetHDFSRecordWriter 등 -->
+        <!-- upstream parquet 공용 코드 재사용: ParquetUtils/ParquetConfig/NifiParquetOutputFile/AvroParquetHDFSRecordWriter 등.
+             이 jar를 그대로 NAR에 번들하면 jar 안의 META-INF/services 때문에 upstream 컴포넌트 7종
+             (org.apache.nifi.processors.parquet.PutParquet, org.apache.nifi.parquet.ParquetReader 등)이
+             argus NAR에도 함께 등록된다. 그래서 provided로 두어 NAR에서 빼고, 필요한 클래스만
+             아래 maven-dependency-plugin(unpack)으로 이 모듈 jar에 넣는다(META-INF/services 제외).
+             이 jar의 런타임 의존성(parquet-avro, nifi-avro-record-utils, nifi-hadoop-record-utils 등)은
+             이 pom에 compile로 직접 선언되어 있어 NAR 번들 목록은 그대로 유지된다. -->
         <dependency>
             <groupId>org.apache.nifi</groupId>
             <artifactId>nifi-parquet-processors</artifactId>
             <version>${nifi.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
@@ -130,4 +137,44 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- nifi-parquet-processors(provided)에서 argus 코드가 실제로 참조하는 클래스만 이 jar에 포함한다.
+                 포함 범위는 jdeps로 확인한 참조 폐쇄(closure)다:
+                   - org/apache/nifi/parquet/utils/** (ParquetUtils, ParquetConfig, ParquetAttribute)
+                   - org/apache/nifi/parquet/stream/** (NifiParquetOutputFile, NifiOutputStream)
+                   - org/apache/nifi/parquet/hadoop/AvroParquetHDFSRecordWriter (upstream PutParquet이 사용)
+                   - org/apache/nifi/processors/parquet/PutParquet (사내 PutParquet의 부모 클래스)
+                 META-INF/services는 포함하지 않으므로 upstream 클래스는 NiFi에 컴포넌트로 등록되지 않는다.
+                 upstream 버전을 올릴 때는 jdeps로 참조 범위를 다시 확인해야 한다. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>unpack-upstream-parquet-classes</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>unpack</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>org.apache.nifi</groupId>
+                                    <artifactId>nifi-parquet-processors</artifactId>
+                                    <version>${nifi.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>true</overWrite>
+                                    <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                                    <includes>org/apache/nifi/parquet/utils/**,org/apache/nifi/parquet/stream/**,org/apache/nifi/parquet/hadoop/AvroParquetHDFSRecordWriter*.class,org/apache/nifi/processors/parquet/PutParquet*.class</includes>
+                                    <excludes>META-INF/**</excludes>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

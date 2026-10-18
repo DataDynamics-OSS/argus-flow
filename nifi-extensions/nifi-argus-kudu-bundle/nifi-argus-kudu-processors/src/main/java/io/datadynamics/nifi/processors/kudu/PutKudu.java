@@ -38,6 +38,7 @@ import org.apache.nifi.components.*;
 import org.apache.nifi.components.PropertyDescriptor.Builder;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
@@ -389,6 +390,65 @@ public class PutKudu extends AbstractKuduProcessor {
         return rels;
     }
 
+    @Override
+    protected Collection<ValidationResult> customValidate(final ValidationContext validationContext) {
+        final List<ValidationResult> results = new ArrayList<>(super.customValidate(validationContext));
+
+        // Expression Language가 없는 경우 컬럼별 Timestamp 패턴 JSON을 설정 시점에 미리 검증한다.
+        // EL이 포함된 경우는 FlowFile Attribute에 따라 값이 달라지므로 onTrigger에서 검증한다.
+        final String customTimestampPatterns = validationContext.getProperty(CUSTOM_COLUMN_TIMESTAMP_PATTERNS).getValue();
+        if (!StringUtils.isEmpty(customTimestampPatterns) && !validationContext.isExpressionLanguagePresent(customTimestampPatterns)) {
+            try {
+                parseTimestampFormats(customTimestampPatterns);
+            } catch (Exception e) {
+                results.add(new ValidationResult.Builder()
+                        .subject(CUSTOM_COLUMN_TIMESTAMP_PATTERNS.getDisplayName())
+                        .input(customTimestampPatterns)
+                        .valid(false)
+                        .explanation("Timestamp 패턴 JSON을 파싱할 수 없습니다: " + e.getMessage())
+                        .build());
+            }
+        }
+        return results;
+    }
+
+    /**
+     * 컬럼별 Timestamp 패턴 JSON을 파싱하여 {@link TimestampFormatHolder}를 생성합니다.
+     * JSON 문법 오류, 알 수 없는 필드, {@code formats} 배열 누락 시 예외가 발생합니다.
+     */
+    static TimestampFormatHolder parseTimestampFormats(final String customTimestampPatterns) throws Exception {
+        final TimestampFormats timestampFormats = mapper.readValue(customTimestampPatterns, TimestampFormats.class);
+        if (timestampFormats == null || timestampFormats.getFormats() == null) {
+            throw new IllegalArgumentException("'formats' 배열이 필요합니다.");
+        }
+        return new TimestampFormatHolder(timestampFormats);
+    }
+
+    /**
+     * NiFi 1.28 upstream PutKudu에서 사용하던 속성명을 현재 속성명으로 변환하고,
+     * 더 이상 지원하지 않는 속성을 제거합니다(1.28 플로우 이관 시 자동 적용).
+     */
+    @Override
+    public void migrateProperties(final PropertyConfiguration config) {
+        super.migrateProperties(config);
+
+        // 1.28 → argus 속성명 변경
+        config.renameProperty("Table Name", TABLE_NAME.getName());
+        config.renameProperty("Failure Strategy", FAILURE_STRATEGY.getName());
+        config.renameProperty("Lowercase Field Names", LOWERCASE_FIELD_NAMES.getName());
+        config.renameProperty("Handle Schema Drift", HANDLE_SCHEMA_DRIFT.getName());
+        config.renameProperty("Insert Operation", INSERT_OPERATION.getName());
+        config.renameProperty("Flush Mode", FLUSH_MODE.getName());
+        config.renameProperty("Batch Size", MAX_ROW_COUNT_PER_BATCH.getName());
+        config.renameProperty("Ignore NULL", IGNORE_NULL.getName());
+
+        // 제거된 기능(Operation/Data RecordPath, FlowFiles per Batch, Skip head line)
+        config.removeProperty("Data RecordPath");
+        config.removeProperty("Operation RecordPath");
+        config.removeProperty("FlowFiles per Batch");
+        config.removeProperty("Skip head line");
+    }
+
     @OnScheduled
     public void onScheduled(final ProcessContext context) throws LoginException {
         // 아래의 값들은 FlowFile의 Attribute에서 Expression을 통해 Resolve할 수 없다.
@@ -430,11 +490,12 @@ public class PutKudu extends AbstractKuduProcessor {
         TimestampFormatHolder holder = null;
         if (!StringUtils.isEmpty(customTimestampPatterns)) {
             try {
-                TimestampFormats timestampFormats = mapper.readValue(customTimestampPatterns, TimestampFormats.class);
-                holder = new TimestampFormatHolder(timestampFormats);
+                holder = parseTimestampFormats(customTimestampPatterns);
             } catch (Exception e) {
                 getLogger().warn("Timestamp Pattern JSON을 파싱할 수 없습니다. JSON : \n{}", customTimestampPatterns, e);
                 session.transfer(flowFile, REL_FAILURE);
+                // 이미 failure로 전송한 FlowFile을 잘못된 설정으로 계속 처리하지 않도록 즉시 종료한다.
+                return;
             }
         }
 

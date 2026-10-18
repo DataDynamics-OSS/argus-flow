@@ -24,6 +24,8 @@ package io.datadynamics.nifi.processors.parquet;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.nifi.security.krb.KerberosUser;
 
 /**
  * HDFS 접근에 필요한 Hadoop Configuration과 FileSystem 인스턴스를 함께 보관하는 불변 홀더 클래스.
@@ -35,10 +37,20 @@ public class HdfsResources {
     private final Configuration configuration;
     // 위 설정으로 생성된 HDFS FileSystem 인스턴스
     private final FileSystem fileSystem;
+    // Kerberos 인증을 사용하는 경우 FileSystem 접근에 사용할 UGI(Kerberos를 사용하지 않으면 null)
+    private final UserGroupInformation userGroupInformation;
+    // Kerberos 인증을 사용하는 경우 로그인한 KerberosUser(Kerberos를 사용하지 않으면 null)
+    private final KerberosUser kerberosUser;
 
     public HdfsResources(Configuration configuration, FileSystem fileSystem) {
+        this(configuration, fileSystem, null, null);
+    }
+
+    public HdfsResources(Configuration configuration, FileSystem fileSystem, UserGroupInformation userGroupInformation, KerberosUser kerberosUser) {
         this.configuration = configuration;
         this.fileSystem = fileSystem;
+        this.userGroupInformation = userGroupInformation;
+        this.kerberosUser = kerberosUser;
     }
 
     public Configuration getConfiguration() {
@@ -47,6 +59,14 @@ public class HdfsResources {
 
     public FileSystem getFileSystem() {
         return fileSystem;
+    }
+
+    public UserGroupInformation getUserGroupInformation() {
+        return userGroupInformation;
+    }
+
+    public KerberosUser getKerberosUser() {
+        return kerberosUser;
     }
 
 }

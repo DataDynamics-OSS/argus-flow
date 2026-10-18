@@ -16,7 +16,11 @@
 package io.datadynamics.nifi.processors.parquet;
 
 import org.apache.avro.Schema;
+import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.schema.MessageTypeParser;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -107,5 +111,41 @@ public class ParquetUtilsTest {
         // registration_dttm 하나만 INT96 컬럼으로 검출되어야 한다.
         assertEquals(1, columns.length);
         assertEquals("registration_dttm", columns[0]);
+    }
+
+    /**
+     * Footer의 Parquet 스키마에서 INT96 컬럼을 REQUIRED/OPTIONAL, 중첩 Group, List(2/3-level), Map 내부까지 모두 수집하고,
+     * List/Map 래퍼 Group은 Avro 경로에서 제외하는지 검증한다(P-7).
+     */
+    @Test
+    void timestampColumnsFromParquetSchema_allPaths() {
+        MessageType schema = MessageTypeParser.parseMessageType("message R {\n"
+                + "  required int96 req_ts;\n"
+                + "  optional int96 opt_ts;\n"
+                + "  required int64 id;\n"
+                + "  optional fixed_len_byte_array(12) not_int96;\n"
+                + "  required group event { required int96 ts; optional binary code (STRING); }\n"
+                + "  optional group outer { optional group inner { optional int96 ts; } }\n"
+                + "  optional group old_list (LIST) { repeated int96 array; }\n"
+                + "  optional group old_rec_list (LIST) { repeated group array { required int96 t; } }\n"
+                + "  optional group new_list (LIST) { repeated group list { optional int96 element; } }\n"
+                + "  optional group new_rec_list (LIST) { repeated group list { required group element { optional int96 t; } } }\n"
+                + "  optional group ts_map (MAP) { repeated group key_value { required binary key (STRING); optional int96 value; } }\n"
+                + "}");
+        String[] columns = ParquetUtils.getTimestampInt96Columns(schema);
+        assertEquals(List.of("req_ts", "opt_ts", "event.ts", "outer.inner.ts", "old_list", "old_rec_list.t", "new_list", "new_rec_list.t", "ts_map"),
+                List.of(columns));
+    }
+
+    /** fs.delete가 false를 반환하면(파일 없음 등) 무시하지 않고 warn 로그를 남겨야 한다(P-10). */
+    @Test
+    void deleteAll_warnsWhenDeleteReturnsFalse(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tmp) throws Exception {
+        org.apache.nifi.util.MockComponentLog log = new org.apache.nifi.util.MockComponentLog("test", this);
+        org.apache.hadoop.fs.FileSystem fs = org.apache.hadoop.fs.FileSystem.getLocal(new org.apache.hadoop.conf.Configuration());
+        java.io.File existing = tmp.resolve("a.parquet").toFile();
+        java.nio.file.Files.writeString(existing.toPath(), "x");
+        ParquetUtils.deleteAll(log, List.of(existing.getAbsolutePath(), tmp.resolve("missing.parquet").toString()), fs);
+        org.junit.jupiter.api.Assertions.assertFalse(existing.exists());
+        assertEquals(1, log.getWarnMessages().size(), "삭제되지 않은 파일 1개에 대해 warn이 있어야 한다");
     }
 }

@@ -2,7 +2,7 @@
  * Modifications Copyright 2026 Data Dynamics Inc.
  *
  * Ported from Apache NiFi 2.10.0 (rel/nifi-2.10.0) for FlowFile-triggered listing
- * (nifi-argus-listing-bundle, design/listing-processors-port.md):
+ * (nifi-argus-listing-bundle):
  *   nifi-extension-bundles/nifi-aws-bundle/nifi-aws-processors/src/main/java/org/apache/nifi/processors/aws/s3/util/S3Util.java
  */
 /*

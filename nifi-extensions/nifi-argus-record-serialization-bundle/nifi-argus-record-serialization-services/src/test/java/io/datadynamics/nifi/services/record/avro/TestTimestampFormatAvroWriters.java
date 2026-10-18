@@ -72,6 +72,9 @@ class TestTimestampFormatAvroWriters {
             + "{\"name\":\"ts\",\"type\":{\"type\":\"long\",\"logicalType\":\"timestamp-millis\"}}"
             + "]}";
 
+    // timestamp-micros 필드를 가진 Avro 스키마 (패턴은 SCHEMA_WITH_PATTERN과 동일)
+    private static final String MICROS_SCHEMA_WITH_PATTERN = SCHEMA_WITH_PATTERN.replace("timestamp-millis", "timestamp-micros");
+
     // 테스트에서 사용할 NiFi 레코드 스키마 생성 (id: LONG, ts: STRING 형태의 원본 타임스탬프 문자열)
     private static RecordSchema recordSchema() {
         final List<RecordField> fields = Arrays.asList(
@@ -107,6 +110,34 @@ class TestTimestampFormatAvroWriters {
         final long expected = expectedMillis(LocalDateTime.of(2024, 1, 2, 3, 4, 5)) + 9L * 60 * 60 * 1000;
         assertEquals(1L, avroRecord.get("id"));
         assertEquals(expected, avroRecord.get("ts"));
+    }
+
+    /**
+     * add-hours가 음수(-9)일 때 timestamp-millis 필드에 밀리초 단위로 보정되는지 검증한다.
+     */
+    @Test
+    void testCreateAvroRecordMillisWithNegativeAddHours() {
+        final Schema avroSchema = new Schema.Parser().parse(SCHEMA_WITH_PATTERN);
+        final GenericRecord avroRecord = TimestampFormatAvroTypeUtil.createAvroRecord(record(1L, "2024/01/02 03:04:05"), avroSchema, "properties", -9);
+
+        assertEquals(expectedMillis(LocalDateTime.of(2024, 1, 2, 3, 4, 5)) - 9L * TimestampFormatAvroTypeUtil.MILLIS_PER_HOUR, avroRecord.get("ts"));
+    }
+
+    /**
+     * timestamp-micros 필드는 마이크로초로 기록되고(addHours=0), add-hours(9)는 마이크로초 단위
+     * (9 * 3,600,000,000us)로 더해지는지 검증한다. 이전에는 밀리초 단위 값이 더해져 보정량이 1/1000이었다.
+     */
+    @Test
+    void testCreateAvroRecordMicrosWithAddHours() {
+        final Schema avroSchema = new Schema.Parser().parse(MICROS_SCHEMA_WITH_PATTERN);
+        final long baseMicros = expectedMillis(LocalDateTime.of(2024, 1, 2, 3, 4, 5)) * 1000L;
+
+        final GenericRecord noShift = TimestampFormatAvroTypeUtil.createAvroRecord(record(1L, "2024/01/02 03:04:05"), avroSchema, "properties", 0);
+        assertEquals(baseMicros, noShift.get("ts"));
+
+        final GenericRecord shifted = TimestampFormatAvroTypeUtil.createAvroRecord(record(1L, "2024/01/02 03:04:05"), avroSchema, "properties", 9);
+        assertEquals(baseMicros + 9L * 3_600_000_000L, shifted.get("ts"));
+        assertEquals(expectedMillis(LocalDateTime.of(2024, 1, 2, 12, 4, 5)) * 1000L, shifted.get("ts"));
     }
 
     /**
@@ -173,6 +204,43 @@ class TestTimestampFormatAvroWriters {
             } else {
                 assertInstanceOf(java.time.Instant.class, ts);
                 assertEquals(expected, ((java.time.Instant) ts).toEpochMilli());
+            }
+        }
+    }
+
+    /**
+     * TimestampFormatAvroRecordSetWriter로 timestamp-micros 필드를 기록할 때 add-hours(9)가
+     * 마이크로초 단위로 적용되어 Avro 파일에 기록되는지 쓰기/읽기 왕복으로 검증한다.
+     */
+    @Test
+    void testWriterServiceRoundTripMicros() throws Exception {
+        final TestRunner runner = TestRunners.newTestRunner(NoOpProcessor.class);
+        final TimestampFormatAvroRecordSetWriter writerFactory = new TimestampFormatAvroRecordSetWriter();
+        runner.addControllerService("avro-writer", writerFactory);
+        runner.setProperty(writerFactory, TimestampFormatAvroRecordSetWriter.TIMESTAMP_FORMAT_PROPERTY_NAME, "properties");
+        runner.setProperty(writerFactory, TimestampFormatAvroRecordSetWriter.ADD_HOURS, "9");
+        runner.enableControllerService(writerFactory);
+
+        final Schema avroSchema = new Schema.Parser().parse(MICROS_SCHEMA_WITH_PATTERN);
+        final RecordSchema recordSchema = AvroTypeUtil.createSchema(avroSchema, MICROS_SCHEMA_WITH_PATTERN, org.apache.nifi.serialization.record.SchemaIdentifier.EMPTY);
+
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (final RecordSetWriter writer = writerFactory.createWriter(runner.getLogger(), recordSchema, out, Collections.emptyMap())) {
+            writer.beginRecordSet();
+            writer.write(record(1L, "2024/01/02 03:04:05"));
+            writer.finishRecordSet();
+        }
+
+        try (final DataFileStream<GenericRecord> reader = new DataFileStream<>(new ByteArrayInputStream(out.toByteArray()), new GenericDatumReader<>())) {
+            final GenericRecord read = reader.next();
+            final Object ts = read.get("ts");
+            final long expected = expectedMillis(LocalDateTime.of(2024, 1, 2, 3, 4, 5)) * 1000L + 9L * 3_600_000_000L;
+            // Avro 리더의 논리 타입 처리 방식에 따라 이 값은 Long 또는 Instant 형태로 반환될 수 있음
+            if (ts instanceof Long) {
+                assertEquals(expected, ts);
+            } else {
+                assertInstanceOf(java.time.Instant.class, ts);
+                assertEquals(expected, java.time.temporal.ChronoUnit.MICROS.between(java.time.Instant.EPOCH, (java.time.Instant) ts));
             }
         }
     }

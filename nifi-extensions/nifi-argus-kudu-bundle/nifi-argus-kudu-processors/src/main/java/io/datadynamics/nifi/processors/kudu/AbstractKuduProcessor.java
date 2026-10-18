@@ -36,6 +36,7 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.PropertyDescriptor.Builder;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.kerberos.KerberosUserService;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.util.StandardValidators;
@@ -112,13 +113,11 @@ public abstract class AbstractKuduProcessor extends AbstractProcessor {
     static final PropertyDescriptor WORKER_COUNT = new Builder()
             .name("worker-count")
             .displayName("Kudu Client Worker 쓰레드 개수")
-            .description(String.format("Kudu 클라이언트 읽기 및 쓰기 작업을 처리하는 최대 작업자 스레드 수입니다.\n" +
-                    "PutKudu의 경우 기본값으로 현재 Processor의 개수 * 2만큼 설정합니다.\n" +
-                    "예를 들어 24Core * 2EA로 구성된 서버라면 vCore로 계산하여 총 96으로 기본값이 설정됩니다.\n" +
-                    "현재 사용가능한 프로세스의 개수: %s\n" +
-                    "NiFi Flow에 Kudu Client를 사용하는 Processor(예; PutKudu)를 많이 사용하고 이 설정값을 높게 설정한 경우\n" +
-                    "NiFi JVM이 과도한 쓰레드를 사용하게 됨으로써 성능 저하가 발생할 수 있습니다.\n" +
-                    "일반적으로 NiFi Cluster의 노드 개수만큼 설정하는 것을 권장합니다.", Runtime.getRuntime().availableProcessors() * 2))
+            .description("Kudu 클라이언트 읽기 및 쓰기 작업을 처리하는 최대 작업자 스레드 수입니다. 기본값은 " + DEFAULT_WORKER_COUNT + "입니다.\n" +
+                    "Kudu 클라이언트는 프로세서마다 하나씩 생성되므로, 이 값을 높이거나 PutKudu처럼 Kudu 클라이언트를 사용하는 " +
+                    "프로세서를 플로우에 많이 배치하면 NiFi JVM에 스레드가 그만큼 많이 생성됩니다(프로세서 수 × 이 값).\n" +
+                    "스레드가 과도하게 많아지면 컨텍스트 스위칭과 메모리 사용이 늘어 NiFi 전체 성능이 저하될 수 있으므로, " +
+                    "기본값에서 시작해 처리량이 부족할 때만 점진적으로 높이는 것을 권장합니다.")
             .required(true)
             .defaultValue(Integer.toString(DEFAULT_WORKER_COUNT))
             .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
@@ -132,6 +131,23 @@ public abstract class AbstractKuduProcessor extends AbstractProcessor {
     private volatile KuduClient kuduClient;
 
     private volatile KerberosUser kerberosUser;
+
+    /**
+     * NiFi 1.28 upstream Kudu 프로세서의 공통 속성을 마이그레이션합니다.
+     * Kerberos Credentials Service / Principal / Password는 NiFi 2.x upstream(AbstractHadoopProcessor)과 동일하게
+     * 제거만 하며, 필요하면 'Kerberos 사용자 서비스'(kerberos-user-service)를 새로 설정해야 합니다.
+     */
+    @Override
+    public void migrateProperties(final PropertyConfiguration config) {
+        config.renameProperty("Kudu Masters", KUDU_MASTERS.getName());
+        // 이관 직후 빌드(365d3b8 이전)에서 KUDU_MASTERS 식별자가 잘못 저장된 경우
+        config.renameProperty("Kudu Master 주소", KUDU_MASTERS.getName());
+
+        config.removeProperty("kerberos-credentials-service");
+        config.removeProperty("kerberos-principal");
+        config.removeProperty("kerberos-password");
+        config.removeProperty("kudu-keep-alive-period-timeout-ms");
+    }
 
     protected KerberosUser getKerberosUser() {
         return this.kerberosUser;

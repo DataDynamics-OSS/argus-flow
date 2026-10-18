@@ -22,7 +22,7 @@
  */
 package io.datadynamics.nifi.services.dbcp.hive;
 
-import io.datadynamics.nifi.services.api.hive.HiveDBCPService;
+import io.datadynamics.nifi.services.api.hive.Hive3DBCPService;
 import org.apache.commons.dbcp2.BasicDataSource;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.security.UserGroupInformation;
@@ -45,6 +45,7 @@ import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.hadoop.SecurityUtil;
 import org.apache.nifi.kerberos.KerberosUserService;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import io.datadynamics.nifi.processors.hive.HiveConfigurator;
@@ -52,6 +53,7 @@ import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.security.krb.KerberosLoginException;
 import org.apache.nifi.security.krb.KerberosUser;
 import io.datadynamics.nifi.processors.hive.util.AuthenticationFailedException;
+import io.datadynamics.nifi.processors.hive.util.KerberosPropertiesMigration;
 import io.datadynamics.nifi.processors.hive.util.ValidationResources;
 
 import java.io.IOException;
@@ -69,13 +71,14 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Apache Hive 커넥션에 사용되는 데이터베이스 커넥션 풀링 서비스 구현체.
  * 커넥션 풀링 기능은 Apache Commons DBCP를 사용한다.
- * Cloudera 전용 버전({@link VendorHive3ConnectionPool})과 달리 표준 Hive JDBC 드라이버를 사용하지만,
- * 마찬가지로 클래스패스에 드라이버가 런타임에 제공되어야 한다.
+ * 업스트림 1.28의 표준 Hive JDBC 드라이버(org.apache.hive.jdbc.HiveDriver) 대신 Cloudera JDBC 드라이버
+ * (com.cloudera.hive.jdbc.HS2Driver)를 클래스 이름 문자열로 로드한다. 이 드라이버 jar는 컴파일 의존성이 아니므로
+ * NiFi 클래스패스에 런타임으로 제공되어야 한다. {@link VendorHive3ConnectionPool}과 달리 드라이버 위치 프로퍼티가 없다.
  */
 @RequiresInstanceClassLoading
 @Tags({"cloudera", "hive", "dbcp", "jdbc", "database", "connection", "pooling", "store"})
 @CapabilityDescription("Apache Hive 3.x용 데이터베이스 커넥션 풀링 서비스를 제공한다. 풀에서 커넥션을 요청하고 사용 후 반환할 수 있다.")
-public class Hive3ConnectionPool extends AbstractControllerService implements HiveDBCPService {
+public class Hive3ConnectionPool extends AbstractControllerService implements Hive3DBCPService {
     static final PropertyDescriptor DATABASE_URL = new PropertyDescriptor.Builder()
             .name("hive-db-connect-url")
             .displayName("데이터베이스 연결 URL")
@@ -259,6 +262,17 @@ public class Hive3ConnectionPool extends AbstractControllerService implements Hi
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
         return properties;
+    }
+
+    /**
+     * NiFi 1.28 플로우의 Kerberos 프로퍼티를 Kerberos User Service 참조로 옮긴다.
+     * "Kerberos Principal" + "Kerberos Keytab"/"Kerberos Password"는 KerberosKeytabUserService/KerberosPasswordUserService를
+     * 새로 만들어 "kerberos-user-service"에 연결하고, "kerberos-credentials-service"는 삭제한다.
+     */
+    @Override
+    public void migrateProperties(final PropertyConfiguration config) {
+        KerberosPropertiesMigration.migrate(config, "kerberos-credentials-service",
+                "Kerberos Principal", "Kerberos Keytab", "Kerberos Password", KERBEROS_USER_SERVICE.getName());
     }
 
     // Hive 설정 리소스 파일이 지정된 경우, 해당 설정 파일을 실제로 로드/파싱하여 유효성을 검증한다.

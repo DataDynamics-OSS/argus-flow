@@ -32,6 +32,7 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.AbstractReportingTask;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.reporting.ReportingContext;
+import org.apache.nifi.util.FormatUtils;
 
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
@@ -45,6 +46,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /**
@@ -65,7 +67,7 @@ public class MonitorMemoryUsageReportingTask extends AbstractReportingTask {
     public static final PropertyDescriptor THRESHOLD_PROPERTY = new PropertyDescriptor.Builder()
             .name("메모리 사용율")
             .displayName("메모리 사용율")
-            .description("경고를 생성하는 임계값을 나타냅니다. 백분율 또는 데이터 크기일 수 있습니다.")
+            .description("경고를 생성하는 임계값을 나타냅니다. 백분율 또는 데이터 크기일 수 있습니다. 백분율은 최대 Heap 크기(-Xmx) 대비이며, 최대 Heap 크기를 알 수 없는 경우에만 현재 committed Heap 크기 대비로 계산합니다.")
             .required(true)
             .addValidator(new ThresholdValidator())
             .defaultValue("65%")
@@ -140,8 +142,16 @@ public class MonitorMemoryUsageReportingTask extends AbstractReportingTask {
     // 임계값 초과 상태가 반복적으로 리포팅되지 않도록 제한하는 최소 간격(밀리초).
     private volatile long reportingIntervalMillis;
 
-    // 직전 확인 시점에 임계값을 초과한 상태였는지 여부.
+    // 직전 확인 시점에 임계값을 초과한 상태였는지 여부. 초과 상태에서 정상으로 복귀했을 때 로그를 남기기 위해 사용된다.
     private volatile boolean lastValueWasExceeded;
+
+    // Heap 사용량 조회 함수. 테스트에서 MemoryUsage 값을 고정하기 위해 패키지 범위로 교체할 수 있다.
+    private volatile Supplier<MemoryUsage> heapMemoryUsageSupplier = () -> ManagementFactory.getMemoryMXBean().getHeapMemoryUsage();
+
+    // 테스트 전용: Heap 사용량 조회 함수를 교체한다.
+    void setHeapMemoryUsageSupplier(final Supplier<MemoryUsage> heapMemoryUsageSupplier) {
+        this.heapMemoryUsageSupplier = heapMemoryUsageSupplier;
+    }
 
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
@@ -182,20 +192,33 @@ public class MonitorMemoryUsageReportingTask extends AbstractReportingTask {
         final String thresholdValue = context.getProperty(THRESHOLD_PROPERTY).getValue().trim();
         threshold = thresholdValue;
 
-        MemoryMXBean memoryMXBean = ManagementFactory.getMemoryMXBean();
-        MemoryUsage heapMemoryUsage = memoryMXBean.getHeapMemoryUsage();
+        final MemoryUsage heapMemoryUsage = heapMemoryUsageSupplier.get();
+        // 백분율의 기준값. 최대 Heap 크기가 정의되지 않은 경우(-1)에만 committed 크기를 사용한다.
+        final long baseSize = heapMemoryUsage.getMax() > 0 ? heapMemoryUsage.getMax() : heapMemoryUsage.getCommitted();
+        final double percentageUsed = baseSize > 0 ? (double) heapMemoryUsage.getUsed() / (double) baseSize * 100D : 0D;
 
         if (DATA_SIZE_PATTERN.matcher(thresholdValue).matches()) {
             calculatedThreshold = DataUnit.parseDataSize(thresholdValue, DataUnit.B).longValue();
         } else {
             final String percentage = thresholdValue.substring(0, thresholdValue.length() - 1);
             final double pct = Double.parseDouble(percentage) / 100D;
-            calculatedThreshold = (long) (heapMemoryUsage.getCommitted() * pct);
+            calculatedThreshold = (long) (baseSize * pct);
         }
 
         if (heapMemoryUsage.getUsed() > calculatedThreshold) {
+            // Reporting Interval을 확인
+            if (System.currentTimeMillis() < reportingIntervalMillis + lastReportTime && lastReportTime > 0L) {
+                return;
+            }
+
             lastReportTime = System.currentTimeMillis();
             lastValueWasExceeded = true;
+
+            // Bulletin(기본 WARN 레벨)이 생성되도록 임계값 초과는 WARN으로 기록한다.
+            final String message = String.format("JVM Heap has exceeded the configured Threshold of %1$s, having used %2$s / %3$s (%4$.2f%%)",
+                    thresholdValue, FormatUtils.formatDataSize(heapMemoryUsage.getUsed()),
+                    FormatUtils.formatDataSize(baseSize), percentageUsed);
+            getLogger().warn("{}", message);
 
             /////////////////////////////////////////
             // 메모리 사용량 정보 수집
@@ -231,6 +254,10 @@ public class MonitorMemoryUsageReportingTask extends AbstractReportingTask {
         } else if (lastValueWasExceeded) {
             lastValueWasExceeded = false;
             lastReportTime = System.currentTimeMillis();
+            final String message = String.format("JVM Heap is no longer exceeding the configured Threshold of %1$s; currently using %2$s / %3$s (%4$.2f%%)",
+                    thresholdValue, FormatUtils.formatDataSize(heapMemoryUsage.getUsed()),
+                    FormatUtils.formatDataSize(baseSize), percentageUsed);
+            getLogger().info("{}", message);
         }
     }
 

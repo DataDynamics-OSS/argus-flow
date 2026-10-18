@@ -22,9 +22,12 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 
+import org.apache.nifi.dbcp.DBCPService;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * PutHive3QL 프로세서 단위 테스트.
@@ -77,5 +80,29 @@ class PutHive3QLTest {
         runner.run();
 
         runner.assertAllFlowFilesTransferred(PutHive3QL.REL_FAILURE, 1);
+    }
+
+    // 벤더 풀(VendorHive3ConnectionPool)과 포팅된 표준 풀(Hive3ConnectionPool) 모두 Hive3DBCPService로 연결·실행되어야 한다.
+    @ParameterizedTest
+    @EnumSource(HivePoolType.class)
+    void acceptsBothConnectionPoolTypes(final HivePoolType poolType) throws Exception {
+        final TestRunner runner = TestRunners.newTestRunner(new PutHive3QL());
+        final DBCPService pool = poolType.addTo(runner, AbstractHive3QLProcessor.HIVE_DBCP_SERVICE, "put_pool_type");
+        try (Connection c = pool.getConnection(); Statement s = c.createStatement()) {
+            s.execute("CREATE TABLE IF NOT EXISTS t (id INT)");
+            s.execute("DELETE FROM t");
+        }
+        runner.assertValid();
+
+        runner.enqueue("INSERT INTO t (id) VALUES (7)".getBytes(StandardCharsets.UTF_8));
+        runner.run();
+
+        runner.assertAllFlowFilesTransferred(PutHive3QL.REL_SUCCESS, 1);
+        try (Connection c = pool.getConnection();
+             Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM t WHERE id = 7")) {
+            rs.next();
+            assertEquals(1, rs.getInt(1));
+        }
     }
 }

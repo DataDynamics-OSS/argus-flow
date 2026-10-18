@@ -45,6 +45,7 @@ import org.apache.nifi.serialization.RecordReaderFactory;
 import org.apache.nifi.serialization.SimpleRecordSchema;
 import org.apache.nifi.serialization.record.*;
 import org.apache.nifi.util.MockFlowFile;
+import org.apache.nifi.util.PropertyMigrationResult;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.apache.nifi.util.Tuple;
@@ -902,6 +903,138 @@ public class PutKuduTest {
 
         testRunner.assertTransferCount(PutKudu.REL_SUCCESS, 1);
         testRunner.getFlowFilesForRelationship(PutKudu.REL_SUCCESS).get(0).assertAttributeEquals(PutKudu.RECORD_COUNT_ATTR, "3");
+    }
+
+    /**
+     * 컬럼별 Timestamp 패턴 JSON(Expression Language로 FlowFile Attribute에서 해석)이 파싱되지 않으면
+     * FlowFile은 failure로 한 번만 라우팅되고 Kudu 처리는 진행되지 않아야 합니다.
+     */
+    @Test
+    public void testInvalidTimestampPatternJsonFromAttributeRoutesToFailureOnly() throws InitializationException {
+        createRecordReader(1);
+        testRunner.setProperty(PutKudu.CUSTOM_COLUMN_TIMESTAMP_PATTERNS, "${timestamp.patterns}");
+        testRunner.assertValid();
+
+        testRunner.enqueue("trigger", Collections.singletonMap("timestamp.patterns", "{ invalid json"));
+        testRunner.run();
+
+        testRunner.assertAllFlowFilesTransferred(PutKudu.REL_FAILURE, 1);
+        testRunner.getFlowFilesForRelationship(PutKudu.REL_FAILURE).get(0).assertContentEquals("trigger");
+        assertTrue(testRunner.getProvenanceEvents().isEmpty(), "JSON 파싱 실패 시 Kudu로 전송(SEND)하지 않아야 합니다.");
+    }
+
+    /**
+     * Expression Language가 없는 컬럼별 Timestamp 패턴은 설정 시점(customValidate)에 JSON 구조를 검증해야 합니다.
+     */
+    @Test
+    public void testInvalidTimestampPatternJsonIsInvalidConfiguration() throws InitializationException {
+        createRecordReader(1);
+
+        testRunner.setProperty(PutKudu.CUSTOM_COLUMN_TIMESTAMP_PATTERNS, "{ invalid json");
+        testRunner.assertNotValid();
+
+        // JSON 문법은 맞지만 formats 배열이 없는 경우
+        testRunner.setProperty(PutKudu.CUSTOM_COLUMN_TIMESTAMP_PATTERNS, "{}");
+        testRunner.assertNotValid();
+
+        // 알 수 없는 필드
+        testRunner.setProperty(PutKudu.CUSTOM_COLUMN_TIMESTAMP_PATTERNS, "{\"unknown\": []}");
+        testRunner.assertNotValid();
+
+        testRunner.setProperty(PutKudu.CUSTOM_COLUMN_TIMESTAMP_PATTERNS, json);
+        testRunner.assertValid();
+    }
+
+    /**
+     * NiFi 1.28 upstream PutKudu의 속성명이 migrateProperties로 현재 속성명으로 변환되고,
+     * 제거된 속성은 삭제되는지 검증합니다.
+     */
+    @Test
+    public void testMigrateProperties() {
+        final Map<String, String> expectedRenamed = new LinkedHashMap<>();
+        expectedRenamed.put("Kudu Masters", PutKudu.KUDU_MASTERS.getName());
+        expectedRenamed.put("Table Name", PutKudu.TABLE_NAME.getName());
+        expectedRenamed.put("Failure Strategy", PutKudu.FAILURE_STRATEGY.getName());
+        expectedRenamed.put("Lowercase Field Names", PutKudu.LOWERCASE_FIELD_NAMES.getName());
+        expectedRenamed.put("Handle Schema Drift", PutKudu.HANDLE_SCHEMA_DRIFT.getName());
+        expectedRenamed.put("Insert Operation", PutKudu.INSERT_OPERATION.getName());
+        expectedRenamed.put("Flush Mode", PutKudu.FLUSH_MODE.getName());
+        expectedRenamed.put("Batch Size", PutKudu.MAX_ROW_COUNT_PER_BATCH.getName());
+        expectedRenamed.put("Ignore NULL", PutKudu.IGNORE_NULL.getName());
+
+        final Set<String> expectedRemoved = new LinkedHashSet<>(List.of(
+                "kerberos-credentials-service", "kerberos-principal", "kerberos-password",
+                "kudu-keep-alive-period-timeout-ms", "Data RecordPath", "Operation RecordPath",
+                "FlowFiles per Batch", "Skip head line"));
+
+        final TestRunner runner = TestRunners.newTestRunner(new MockPutKudu());
+        runner.clearProperties();
+        runner.setProperty("Kudu Masters", DEFAULT_MASTERS);
+        runner.setProperty("Table Name", DEFAULT_TABLE_NAME);
+        runner.setProperty("Failure Strategy", PutKudu.FAILURE_STRATEGY_ROLLBACK.getValue());
+        runner.setProperty("Lowercase Field Names", "true");
+        runner.setProperty("Handle Schema Drift", "true");
+        runner.setProperty("Insert Operation", OperationType.UPSERT.toString());
+        runner.setProperty("Flush Mode", SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC.toString());
+        runner.setProperty("Batch Size", "500");
+        runner.setProperty("Ignore NULL", "true");
+        for (String removed : expectedRemoved) {
+            runner.setProperty(removed, "legacy-value");
+        }
+
+        final PropertyMigrationResult result = runner.migrateProperties();
+
+        // MockPropertyConfiguration은 실제 속성 존재 여부와 무관하게 rename/remove 호출을 모두 기록한다.
+        assertTrue(result.getPropertiesRenamed().entrySet().containsAll(expectedRenamed.entrySet()), result.getPropertiesRenamed().toString());
+        assertTrue(result.getPropertiesRemoved().containsAll(expectedRemoved), result.getPropertiesRemoved().toString());
+        assertTrue(result.getPropertiesUpdated().isEmpty());
+        assertTrue(result.getCreatedControllerServices().isEmpty());
+
+        final Map<String, String> properties = runner.getProcessContext().getAllProperties();
+        assertEquals(DEFAULT_MASTERS, properties.get(PutKudu.KUDU_MASTERS.getName()));
+        assertEquals(DEFAULT_TABLE_NAME, properties.get(PutKudu.TABLE_NAME.getName()));
+        assertEquals(PutKudu.FAILURE_STRATEGY_ROLLBACK.getValue(), properties.get(PutKudu.FAILURE_STRATEGY.getName()));
+        assertEquals("true", properties.get(PutKudu.LOWERCASE_FIELD_NAMES.getName()));
+        assertEquals("true", properties.get(PutKudu.HANDLE_SCHEMA_DRIFT.getName()));
+        assertEquals(OperationType.UPSERT.toString(), properties.get(PutKudu.INSERT_OPERATION.getName()));
+        assertEquals(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC.toString(), properties.get(PutKudu.FLUSH_MODE.getName()));
+        assertEquals("500", properties.get(PutKudu.MAX_ROW_COUNT_PER_BATCH.getName()));
+        assertEquals("true", properties.get(PutKudu.IGNORE_NULL.getName()));
+        for (String oldName : expectedRenamed.keySet()) {
+            assertFalse(properties.containsKey(oldName), oldName + " 속성이 남아있지 않아야 합니다.");
+        }
+        for (String removed : expectedRemoved) {
+            assertFalse(properties.containsKey(removed), removed + " 속성이 제거되어야 합니다.");
+        }
+    }
+
+    /**
+     * 이관 직후 빌드(365d3b8 이전)에서 잘못 저장된 'Kudu Master 주소' 식별자도 kudu-masters로 변환되는지 검증합니다.
+     */
+    @Test
+    public void testMigratePropertiesLegacyKuduMasterIdentifier() {
+        final TestRunner runner = TestRunners.newTestRunner(new MockPutKudu());
+        runner.clearProperties();
+        runner.setProperty("Kudu Master 주소", DEFAULT_MASTERS);
+
+        final PropertyMigrationResult result = runner.migrateProperties();
+
+        assertEquals(PutKudu.KUDU_MASTERS.getName(), result.getPropertiesRenamed().get("Kudu Master 주소"));
+        final Map<String, String> properties = runner.getProcessContext().getAllProperties();
+        assertFalse(properties.containsKey("Kudu Master 주소"));
+        assertEquals(DEFAULT_MASTERS, properties.get(PutKudu.KUDU_MASTERS.getName()));
+    }
+
+    /**
+     * 현재 속성명으로 저장된 플로우는 migrateProperties 이후에도 변경되지 않아야 합니다.
+     */
+    @Test
+    public void testMigratePropertiesNoopForCurrentNames() {
+        final Map<String, String> before = new HashMap<>(testRunner.getProcessContext().getAllProperties());
+
+        testRunner.migrateProperties();
+
+        assertEquals(before, testRunner.getProcessContext().getAllProperties());
     }
 
     private void testKuduPartialFailure(SessionConfiguration.FlushMode flushMode) throws Exception {

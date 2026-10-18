@@ -54,6 +54,7 @@
         <module>nifi-argus-flow-analysis-bundle</module>
         <module>nifi-argus-db-iaa-bundle</module>
         <module>nifi-argus-listing-bundle</module>
+        <module>nifi-argus-trino-bundle</module>
     </modules>
 
     <dependencyManagement>

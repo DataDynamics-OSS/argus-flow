@@ -44,6 +44,7 @@ import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.hadoop.SecurityUtil;
 import org.apache.nifi.kerberos.KerberosUserService;
 import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.migration.PropertyConfiguration;
 import org.apache.nifi.processor.*;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
@@ -57,6 +58,7 @@ import org.apache.nifi.serialization.RecordReaderFactory;
 import org.apache.nifi.util.StringUtils;
 import io.datadynamics.nifi.processors.hive.util.AuthenticationFailedException;
 import io.datadynamics.nifi.processors.hive.util.HiveOptions;
+import io.datadynamics.nifi.processors.hive.util.KerberosPropertiesMigration;
 import io.datadynamics.nifi.processors.hive.util.ValidationResources;
 
 import java.io.IOException;
@@ -259,6 +261,17 @@ public class PutHive3Streaming extends AbstractProcessor {
     @Override
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
         return propertyDescriptors;
+    }
+
+    /**
+     * NiFi 1.28 플로우의 Kerberos 프로퍼티를 Kerberos User Service 참조로 옮긴다.
+     * "kerberos-principal" + "kerberos-password"는 KerberosPasswordUserService를 새로 만들어 "kerberos-user-service"에
+     * 연결하고, "kerberos-credentials-service"는 삭제한다(1.28 PutHive3Streaming에는 keytab 프로퍼티가 없었다).
+     */
+    @Override
+    public void migrateProperties(final PropertyConfiguration config) {
+        KerberosPropertiesMigration.migrate(config, "kerberos-credentials-service",
+                "kerberos-principal", null, "kerberos-password", KERBEROS_USER_SERVICE.getName());
     }
 
     @Override

@@ -1,10 +1,9 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 2026 Data Dynamics Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -20,7 +19,10 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.net.NetUtils;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.nifi.annotation.behavior.RequiresInstanceClassLoading;
 import org.apache.nifi.annotation.behavior.Restricted;
+import org.apache.nifi.annotation.behavior.TriggerSerially;
 import org.apache.nifi.annotation.behavior.Restriction;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
 import org.apache.nifi.annotation.behavior.WritesAttributes;
@@ -28,14 +30,19 @@ import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.annotation.lifecycle.OnStopped;
+import org.apache.nifi.components.ClassloaderIsolationKeyProvider;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.RequiredPermission;
 import org.apache.nifi.components.resource.ResourceCardinality;
 import org.apache.nifi.components.resource.ResourceReferences;
+import org.apache.nifi.components.ValidationContext;
+import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.components.resource.ResourceType;
 import org.apache.nifi.context.PropertyContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.hadoop.SecurityUtil;
+import org.apache.nifi.kerberos.KerberosUserService;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
@@ -43,6 +50,7 @@ import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
+import org.apache.nifi.security.krb.KerberosUser;
 
 import javax.net.SocketFactory;
 import java.io.IOException;
@@ -50,7 +58,9 @@ import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URI;
+import java.security.PrivilegedExceptionAction;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -74,18 +84,23 @@ import static org.apache.nifi.expression.ExpressionLanguageScope.FLOWFILE_ATTRIB
  * </p>
  */
 @Tags({"custom", "hadoop", "HDFS", "merge", "parquet", "source", "filesystem"})
-@CapabilityDescription("HDFS에서 Parquet 파일을 로딩하여 Merge 후에 저장한다. 이 프로세서는 Merge후 원본 파일을 삭제한다.")
+@CapabilityDescription("HDFS에서 Parquet 파일을 로딩하여 Merge 후에 저장한다. 원본 Parquet 파일 유지 옵션이 false이면 Merge 결과를 전송(커밋)한 후 원본 파일을 삭제한다.")
+// 동시 태스크가 같은 대상 파일에 기록하거나 같은 원본을 중복 Merge하지 않도록 한 번에 하나의 태스크만 실행합니다.
+@TriggerSerially
 @WritesAttributes({
         @WritesAttribute(attribute = "merge.hdfs.source.dir", description = "원본 Parquet 파일이 있는 디렉토리(HDFS)"),
-        @WritesAttribute(attribute = "merge.hdfs.source.files.count", description = "원본 Parquet 파일의 개수"),
-        @WritesAttribute(attribute = "merge.hdfs.target.dir", description = "Merge한 Parquet 파일을 저장한 디렉토리(HDFS)"),
-        @WritesAttribute(attribute = "merge.target.filename", description = "Merge한 Parquet 파일의 파일명(HDFS)"),
-        @WritesAttribute(attribute = "merge.target.qualifiedPath", description = "Merge한 Parquet 파일의 절대 경로(HDFS)")})
+        @WritesAttribute(attribute = "merge.hdfs.source.files.count", description = "원본 Parquet 파일의 개수(Merge할 파일이 없으면 0)"),
+        @WritesAttribute(attribute = "merge.hdfs.target.dir", description = "Merge한 Parquet 파일을 저장한 디렉토리(HDFS). Merge 결과 파일을 기록하지 않은 경우 기록하지 않음"),
+        @WritesAttribute(attribute = "merge.target.filename", description = "Merge한 Parquet 파일의 파일명(HDFS). Merge 결과 파일을 기록하지 않은 경우 기록하지 않음"),
+        @WritesAttribute(attribute = "merge.target.qualifiedPath", description = "Merge한 Parquet 파일의 Fully Qualified 경로(스킴 포함, HDFS). Merge 결과 파일을 기록하지 않은 경우 기록하지 않음")})
 @Restricted(restrictions = {
         @Restriction(requiredPermission = RequiredPermission.READ_DISTRIBUTED_FILESYSTEM, explanation = "HDFS 또는 로컬 파일 시스템의 읽기 접근 권한이 필요합니다."),
         @Restriction(requiredPermission = RequiredPermission.WRITE_DISTRIBUTED_FILESYSTEM, explanation = "HDFS 또는 로컬 파일 시스템의 쓰기 접근 권한이 필요합니다.")
 })
-public class MergeParquet extends AbstractProcessor {
+// Hadoop의 UserGroupInformation(Kerberos 로그인 정보)과 FileSystem 통계 쓰레드는 static 상태이므로 인스턴스별 ClassLoader로 격리합니다.
+// 업스트림 AbstractHadoopProcessor와 같이 Hadoop 설정 파일과 Kerberos Principal이 같은 인스턴스끼리만 ClassLoader를 공유합니다.
+@RequiresInstanceClassLoading(cloneAncestorResources = true)
+public class MergeParquet extends AbstractProcessor implements ClassloaderIsolationKeyProvider {
 
     ///////////////////////////////////////////////
     // Relationship
@@ -118,7 +133,7 @@ public class MergeParquet extends AbstractProcessor {
     public static final PropertyDescriptor PROP_KEEP_SOURCE_FILE = new PropertyDescriptor.Builder()
             .name("원본 Parquet 파일 유지")
             .displayName("원본 Parquet 파일 유지")
-            .description("다음 Processor로 전송 후에 원본 Parquet 파일을 삭제합니다.")
+            .description("true이면 Merge 후에도 원본 Parquet 파일을 유지합니다. false이면 Merge 결과를 다음 Processor로 전송(세션 커밋)한 후에 원본 Parquet 파일을 삭제합니다.")
             .required(true)
             .allowableValues("true", "false")
             .defaultValue("true")
@@ -127,7 +142,8 @@ public class MergeParquet extends AbstractProcessor {
     public static final PropertyDescriptor PROP_HDFS_SOURCE_PATH = new PropertyDescriptor.Builder()
             .name("Merge할 Parquet 파일이 있는 HDFS 디렉토리")
             .displayName("Merge할 Parquet 파일이 있는 HDFS 디렉토리")
-            .description("Merge할 Parquet 파일을 HDFS에서 읽을때 사용하는 디렉토리입니다. 이 디렉토리의 *.parquet 파일을 모두 로딩합니다.")
+            .description("Merge할 Parquet 파일을 HDFS에서 읽을때 사용하는 디렉토리 또는 Glob 패턴입니다. 디렉토리를 지정하면 이 디렉토리의 *.parquet 파일을 모두 로딩하고, "
+                    + "Glob 패턴(예: /data/2026-*/*.parquet)을 지정하면 패턴에 일치하는 파일을 로딩합니다.")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(FLOWFILE_ATTRIBUTES)
@@ -149,6 +165,15 @@ public class MergeParquet extends AbstractProcessor {
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(FLOWFILE_ATTRIBUTES)
+            .build();
+
+    public static final PropertyDescriptor KERBEROS_USER_SERVICE = new PropertyDescriptor.Builder()
+            .name("Kerberos User Service")
+            .displayName("Kerberos User Service")
+            .description("Kerberos 인증에 사용할 Kerberos User Controller Service를 지정합니다. " +
+                    "Hadoop 설정 파일의 hadoop.security.authentication 값이 kerberos이면 반드시 지정해야 합니다.")
+            .identifiesControllerService(KerberosUserService.class)
+            .required(false)
             .build();
 
     ///////////////////////////////////////////////////
@@ -175,7 +200,67 @@ public class MergeParquet extends AbstractProcessor {
         properties.add(PROP_HDFS_TARGET_DIR);
         properties.add(PROP_HDFS_TARGET_FILENAME);
         properties.add(PROP_KEEP_SOURCE_FILE);
+        properties.add(KERBEROS_USER_SERVICE);
         return properties;
+    }
+
+    /**
+     * Hadoop 설정 파일에서 Kerberos 인증(hadoop.security.authentication=kerberos)을 사용하는데
+     * Kerberos User Service가 지정되지 않은 경우 오류로 처리합니다.
+     */
+    @Override
+    protected Collection<ValidationResult> customValidate(ValidationContext validationContext) {
+        final List<ValidationResult> results = new ArrayList<>();
+        final List<String> locations = getConfigLocations(validationContext);
+        if (locations.isEmpty()) {
+            return results;
+        }
+
+        try {
+            final Configuration conf = new ExtendedConfiguration(getLogger());
+            conf.setClassLoader(Thread.currentThread().getContextClassLoader());
+            getConfigurationFromResources(conf, locations);
+            final boolean kerberosUserServiceSet = validationContext.getProperty(KERBEROS_USER_SERVICE).isSet();
+            if (SecurityUtil.isSecurityEnabled(conf) && !kerberosUserServiceSet) {
+                results.add(new ValidationResult.Builder()
+                        .valid(false)
+                        .subject(KERBEROS_USER_SERVICE.getDisplayName())
+                        .explanation("Hadoop 설정 파일의 hadoop.security.authentication 값이 kerberos이므로 Kerberos User Service를 지정해야 합니다.")
+                        .build());
+            }
+        } catch (IOException | RuntimeException e) {
+            results.add(new ValidationResult.Builder()
+                    .valid(false)
+                    .subject(PROP_HADOOP_CONFIGURATION_RESOURCES.getDisplayName())
+                    .explanation("Hadoop 설정 파일을 로딩할 수 없습니다. 원인: " + e.getMessage())
+                    .build());
+        }
+        return results;
+    }
+
+    /**
+     * 인스턴스별 ClassLoader를 공유할 기준(Hadoop 설정 파일 경로 + Kerberos Principal)을 반환합니다.
+     */
+    @Override
+    public String getClassloaderIsolationKey(final PropertyContext context) {
+        final StringBuilder key = new StringBuilder();
+        final String configResources = context.getProperty(PROP_HADOOP_CONFIGURATION_RESOURCES).getValue();
+        if (configResources != null) {
+            key.append(configResources);
+        }
+        try {
+            final KerberosUserService kerberosUserService = context.getProperty(KERBEROS_USER_SERVICE).asControllerService(KerberosUserService.class);
+            if (kerberosUserService != null) {
+                final KerberosUser kerberosUser = kerberosUserService.createKerberosUser();
+                if (key.length() > 0) {
+                    key.append("__");
+                }
+                key.append(kerberosUser.getPrincipal());
+            }
+        } catch (IllegalStateException ignored) {
+            // Kerberos User Service가 비활성화되어 있으면 Principal을 확인할 수 없습니다.
+        }
+        return key.length() > 0 ? key.toString() : null;
     }
 
     @Override
@@ -231,23 +316,43 @@ public class MergeParquet extends AbstractProcessor {
         List<String> filesToDelete = new ArrayList<>();
 
         try {
-            // HDFS에서 Parquet 파일을 로딩하여 Merge합니다.
-            FileSystem fs = hdfsResources.get().getFileSystem();
-            ParquetUtils.merge(fs, hdfsSourcePath, hdfsTargetDir, hdfsTargetFilename, logger, filesToDelete);
+            // Kerberos 인증을 사용하면 실행할 때마다 TGT를 확인하고 필요하면 다시 로그인합니다.
+            final HdfsResources resources = hdfsResources.get();
+            SecurityUtil.checkTGTAndRelogin(logger, resources.getKerberosUser());
+            final UserGroupInformation ugi = resources.getUserGroupInformation();
+            final FileSystem fs = resources.getFileSystem();
+
+            // HDFS에서 Parquet 파일을 로딩하여 Merge합니다(Kerberos 인증을 사용하면 UGI 권한으로 실행).
+            final Path mergedFile = SecurityUtil.callWithUgi(ugi, (PrivilegedExceptionAction<Path>) () ->
+                    ParquetUtils.merge(fs, hdfsSourcePath, hdfsTargetDir, hdfsTargetFilename, logger, filesToDelete));
 
             // FlowFile을 전송하고 원본 파일 삭제 옵션이 ON인 경우 원본 파일을 삭제합니다.
             Map<String, String> newAttributes = new HashMap<>(flowFile.getAttributes());
             newAttributes.put("merge.hdfs.source.dir", hdfsSourcePath);
             newAttributes.put("merge.hdfs.source.files.count", String.valueOf(filesToDelete.size()));
-            newAttributes.put("merge.hdfs.target.dir", hdfsTargetDir);
-            newAttributes.put("merge.target.filename", hdfsTargetFilename);
-            newAttributes.put("merge.target.qualifiedPath", String.format("%s/%s", hdfsTargetDir, hdfsTargetFilename));
+            if (mergedFile != null) {
+                newAttributes.put("merge.hdfs.target.dir", hdfsTargetDir);
+                newAttributes.put("merge.target.filename", hdfsTargetFilename);
+                newAttributes.put("merge.target.qualifiedPath", mergedFile.toString());
+            } else {
+                // Merge할 파일이나 레코드가 없으면 대상 파일을 기록하지 않으므로 대상 관련 속성을 기록하지 않습니다.
+                logger.info("Merge 결과 파일을 기록하지 않았으므로 대상 파일 속성 없이 success로 전송합니다. 원본 경로 : {}, Merge한 원본 파일 수 : {}",
+                        hdfsSourcePath, filesToDelete.size());
+            }
             FlowFile f = session.putAllAttributes(flowFile, newAttributes);
             session.transfer(f, REL_SUCCESS);
             session.commitAsync(() -> {
                 if (!keepSourceFile) {
                     logger.info("HDFS의 원본 Parquet 파일을 삭제하는 옵션이 ON입니다.");
-                    ParquetUtils.deleteAll(logger, filesToDelete, hdfsResources.get().getFileSystem());
+                    try {
+                        SecurityUtil.checkTGTAndRelogin(logger, resources.getKerberosUser());
+                        SecurityUtil.callWithUgi(ugi, (PrivilegedExceptionAction<Void>) () -> {
+                            ParquetUtils.deleteAll(logger, filesToDelete, fs);
+                            return null;
+                        });
+                    } catch (Exception e) {
+                        logger.warn("HDFS의 원본 Parquet 파일을 삭제할 수 없습니다. 원인: {}", e.getMessage(), e);
+                    }
                 }
             });
         } catch (Exception e) {
@@ -277,6 +382,15 @@ public class MergeParquet extends AbstractProcessor {
                         fileSystem.close();
                     } catch (IOException e) {
                         getLogger().warn("FileSystem을 종료할 수 없습니다. 원인: " + e.getMessage(), e);
+                    }
+                }
+                // Kerberos 인증을 사용한 경우 로그아웃합니다.
+                final KerberosUser kerberosUser = resources.getKerberosUser();
+                if (kerberosUser != null) {
+                    try {
+                        kerberosUser.logout();
+                    } catch (Exception e) {
+                        getLogger().warn("Kerberos 로그아웃을 할 수 없습니다. 원인: " + e.getMessage(), e);
                     }
                 }
             }
@@ -313,13 +427,42 @@ public class MergeParquet extends AbstractProcessor {
         String disableCacheName = String.format("fs.%s.impl.disable.cache", FileSystem.getDefaultUri(config).getScheme());
         config.set(disableCacheName, "true");
 
-        FileSystem fs = FileSystem.get(config);
+        // Kerberos 인증을 사용하면 KerberosUser로 로그인한 UGI 권한으로 FileSystem을 생성합니다.
+        final FileSystem fs;
+        final UserGroupInformation ugi;
+        final KerberosUser kerberosUser;
+        if (SecurityUtil.isSecurityEnabled(config)) {
+            final KerberosUserService kerberosUserService = context.getProperty(KERBEROS_USER_SERVICE).asControllerService(KerberosUserService.class);
+            if (kerberosUserService == null) {
+                throw new IOException("Hadoop 설정 파일의 hadoop.security.authentication 값이 kerberos이지만 Kerberos User Service가 지정되지 않았습니다.");
+            }
+            kerberosUser = kerberosUserService.createKerberosUser();
+            ugi = createUserGroupInformation(config, kerberosUser);
+            fs = SecurityUtil.callWithUgi(ugi, () -> FileSystem.get(config));
+            getLogger().info("Kerberos 인증으로 HDFS에 접근합니다. Principal: {}", kerberosUser.getPrincipal());
+        } else {
+            kerberosUser = null;
+            ugi = null;
+            fs = FileSystem.get(config);
+        }
 
         final Path workingDir = fs.getWorkingDirectory();
         getLogger().info("HDFS를 초기화했습니다 --> working dir: {} default block size: {} default replication: {} config: {}",
                 workingDir, fs.getDefaultBlockSize(workingDir), fs.getDefaultReplication(workingDir), config.toString());
 
-        return new HdfsResources(config, fs);
+        return new HdfsResources(config, fs, ugi, kerberosUser);
+    }
+
+    /**
+     * KerberosUser로 로그인하여 UserGroupInformation을 생성합니다. 테스트에서 재정의할 수 있도록 분리했습니다.
+     *
+     * @param config       Hadoop Configuration
+     * @param kerberosUser Kerberos User Service가 생성한 KerberosUser
+     * @return KerberosUser의 Subject로 생성한 UGI
+     * @throws IOException 로그인 실패시
+     */
+    protected UserGroupInformation createUserGroupInformation(final Configuration config, final KerberosUser kerberosUser) throws IOException {
+        return SecurityUtil.getUgiForKerberosUser(config, kerberosUser);
     }
 
     /**
@@ -387,6 +530,8 @@ public class MergeParquet extends AbstractProcessor {
      * Hadoop FileSystem 내부의 통계(statistics) 수집용 백그라운드 쓰레드를 리플렉션으로 찾아 인터럽트합니다.
      * Hadoop FileSystem API에는 이 쓰레드를 중지하는 공개 메소드가 없으므로, private 필드에 직접 접근하여
      * 쓰레드를 종료시켜 Processor 중지 시 쓰레드가 누수되지 않도록 합니다.
+     * 이 쓰레드는 static이므로 {@link RequiresInstanceClassLoading}으로 격리된 ClassLoader(같은 격리 키의 MergeParquet 인스턴스)에만
+     * 영향을 주며, 다른 Hadoop 컴포넌트가 사용하는 공용 쓰레드는 인터럽트하지 않습니다(업스트림 HDFSResourceHelper와 같은 방식).
      */
     private void interruptStatisticsThread(final FileSystem fileSystem) throws NoSuchFieldException, IllegalAccessException {
         final Field statsField = FileSystem.class.getDeclaredField("statistics");

@@ -46,7 +46,7 @@ case "$VERSION" in
     # 검증된 태그 커밋 (2026-10-14 확인)
     EXPECTED_COMMIT="2baff691128fa782983fb79bb1087adff027a4c1"
     BUNDLES=(
-      # nifi-argus-listing-bundle 포크 원본 (design/listing-processors-port.md)
+      # nifi-argus-listing-bundle 포크 원본 (scripts/port-listing.py 입력)
       nifi-extension-bundles/nifi-extension-utils/nifi-listed-entity
       nifi-extension-bundles/nifi-extension-utils/nifi-file-transfer
       nifi-extension-bundles/nifi-standard-bundle/nifi-standard-processors

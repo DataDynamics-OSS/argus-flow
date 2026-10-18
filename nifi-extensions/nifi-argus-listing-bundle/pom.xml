@@ -29,7 +29,7 @@
     <name>Argus Flow :: Listing Bundle</name>
     <description>업스트림 FlowFile 이 List 대상을 정하는 트리거형 List 프로세서 (ListFile/SFTP/FTP/S3/HDFS 포크)</description>
 
-    <!-- Apache NiFi rel/nifi-2.10.0 (2baff69) 포크. 설계: design/listing-processors-port.md -->
+    <!-- Apache NiFi rel/nifi-2.10.0 (2baff69) 포크. 기준본 재현: scripts/port-listing.py -->
     <modules>
         <module>nifi-argus-listing-common</module>
         <module>nifi-argus-listing-processors</module>

@@ -19,6 +19,7 @@ import org.apache.commons.dbcp2.BasicDataSource;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.nifi.annotation.behavior.DynamicProperty;
 import org.apache.nifi.annotation.behavior.RequiresInstanceClassLoading;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
@@ -69,11 +70,18 @@ import java.util.concurrent.atomic.AtomicReference;
  * Kerberos 보안이 활성화된 Hive 환경에서는 KerberosUserService를 통해 인증을 수행한다.
  */
 @RequiresInstanceClassLoading
+@DynamicProperty(name = "Hive 설정 속성 이름", value = "Hive 설정 속성 값",
+        description = "지정한 이름/값을 Hive 설정(HiveConf)에 그대로 반영한다. Hive 설정 리소스 파일의 같은 이름 속성을 덮어쓰며, "
+                + "Kerberos 사용 여부(hadoop.security.authentication) 판단 등 설정 기반 동작에 적용된다.",
+        expressionLanguageScope = ExpressionLanguageScope.ENVIRONMENT)
 @Tags({"cloudera", "hive", "dbcp", "jdbc", "database", "connection", "pooling", "store"})
 @CapabilityDescription("Apache Hive 3.x용 데이터베이스 커넥션 풀링 서비스를 제공한다. 풀에서 커넥션을 요청하고 사용 후 반환할 수 있다.")
 public class VendorHive3ConnectionPool extends AbstractControllerService implements VendorHiveDBCPService {
     // 풀에 유지할 최소 유휴 커넥션 수의 기본값(0: 유휴 커넥션을 미리 만들어 두지 않음)
     private static final String DEFAULT_MIN_IDLE = "0";
+
+    // 벤더 Hive JDBC 드라이버 클래스명(런타임 제공, 컴파일 의존성 없음)
+    static final String DRIVER_CLASS_NAME = "com.cloudera.hive.jdbc.HS2Driver";
 
     // 풀에 유지할 최대 유휴 커넥션 수의 기본값
     private static final String DEFAULT_MAX_IDLE = "8";
@@ -151,7 +159,7 @@ public class VendorHive3ConnectionPool extends AbstractControllerService impleme
 
             .defaultValue("500 millis")
             .required(true)
-            .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
+            .addValidator(DBCPValidator.CUSTOM_TIME_PERIOD_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
             .build();
 
@@ -260,6 +268,43 @@ public class VendorHive3ConnectionPool extends AbstractControllerService impleme
 
     private final AtomicReference<KerberosUser> kerberosUserReference = new AtomicReference<>();
 
+    /**
+     * 물리 커넥션 생성을 {@link UserGroupInformation#doAs}로 감싸는 BasicDataSource.
+     * getConnection 호출 스레드뿐 아니라 DBCP evictor 스레드가 최소 유휴 커넥션을 보충할 때도
+     * Kerberos 인증 컨텍스트에서 드라이버의 connect가 호출되도록 한다. UGI가 없으면(비보안) 그대로 생성한다.
+     */
+    static final class UgiAwareDataSource extends BasicDataSource {
+        private final java.util.function.Supplier<UserGroupInformation> ugiSupplier;
+
+        UgiAwareDataSource(final java.util.function.Supplier<UserGroupInformation> ugiSupplier) {
+            this.ugiSupplier = ugiSupplier;
+        }
+
+        @Override
+        protected org.apache.commons.dbcp2.ConnectionFactory createConnectionFactory() throws SQLException {
+            final org.apache.commons.dbcp2.ConnectionFactory delegate = super.createConnectionFactory();
+            return () -> {
+                final UserGroupInformation currentUgi = ugiSupplier.get();
+                if (currentUgi == null) {
+                    return delegate.createConnection();
+                }
+                try {
+                    return currentUgi.doAs((PrivilegedExceptionAction<Connection>) delegate::createConnection);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new SQLException("Interrupted while creating Hive connection", e);
+                } catch (java.io.IOException e) {
+                    throw new SQLException("Unable to create Hive connection as " + currentUgi.getUserName(), e);
+                } catch (UndeclaredThrowableException e) {
+                    if (e.getCause() instanceof SQLException) {
+                        throw (SQLException) e.getCause();
+                    }
+                    throw e;
+                }
+            };
+        }
+    }
+
     // 컨트롤러 서비스가 지원하는 프로퍼티 목록을 초기화한다. NiFi가 서비스를 등록할 때 한 번 호출된다.
     protected void init(ControllerServiceInitializationContext context) {
         List<PropertyDescriptor> props = new ArrayList<>();
@@ -285,15 +330,47 @@ public class VendorHive3ConnectionPool extends AbstractControllerService impleme
         return this.properties;
     }
 
-    // Hive 설정 리소스 파일이 지정된 경우, 해당 설정 파일을 실제로 로드/파싱하여 유효성을 검증한다.
-    // 검증 결과(파싱 실패 등)는 캐시(validationResourceHolder)를 통해 재사용되어 반복 로드를 방지한다.
+    // 사용자가 추가한 동적 프로퍼티를 허용한다. 값은 onConfigured에서 Hive 설정(HiveConf)에 반영된다.
+    @Override
+    protected PropertyDescriptor getSupportedDynamicPropertyDescriptor(final String propertyDescriptorName) {
+        return new PropertyDescriptor.Builder()
+                .name(propertyDescriptorName)
+                .description("Hive 설정(HiveConf)에 반영할 '" + propertyDescriptorName + "' 속성의 값")
+                .required(false)
+                .dynamic(true)
+                .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+                .expressionLanguageSupported(ExpressionLanguageScope.ENVIRONMENT)
+                .build();
+    }
+
+    // onConfigured와 같은 방식으로 Hive 설정(지정한 리소스 파일 + 클래스패스 기본 설정 + 동적 프로퍼티)을 구성해
+    // 보안(Kerberos)이 켜져 있으면 Kerberos User Service가 지정되었는지 검증한다.
+    // 리소스 파일 로드 결과는 캐시(validationResourceHolder)를 통해 재사용되어 반복 로드를 방지한다.
     protected Collection<ValidationResult> customValidate(ValidationContext validationContext) {
-        boolean confFileProvided = validationContext.getProperty(HIVE_CONFIGURATION_RESOURCES).isSet();
         List<ValidationResult> problems = new ArrayList<>();
-        if (confFileProvided) {
-            KerberosUserService kerberosUserService = (KerberosUserService) validationContext.getProperty(KERBEROS_USER_SERVICE).asControllerService(KerberosUserService.class);
-            String configFiles = validationContext.getProperty(HIVE_CONFIGURATION_RESOURCES).evaluateAttributeExpressions().getValue();
-            problems.addAll(this.hiveConfigurator.validate(configFiles, kerberosUserService, this.validationResourceHolder, getLogger()));
+        KerberosUserService kerberosUserService = (KerberosUserService) validationContext.getProperty(KERBEROS_USER_SERVICE).asControllerService(KerberosUserService.class);
+        String configFiles = validationContext.getProperty(HIVE_CONFIGURATION_RESOURCES).evaluateAttributeExpressions().getValue();
+        // 리소스 파일을 지정하지 않아도 HiveConf는 클래스패스의 hive-site.xml/core-site.xml을 읽으므로 같은 기준으로 판단한다.
+        Configuration cached = this.hiveConfigurator.getConfigurationForValidation(this.validationResourceHolder,
+                configFiles == null ? "" : configFiles, getLogger());
+        // 캐시된 설정을 변경하지 않도록 복사본에 동적 프로퍼티를 반영한다.
+        Configuration hiveConfig = new Configuration(cached);
+        for (Map.Entry<PropertyDescriptor, String> entry : validationContext.getProperties().entrySet()) {
+            PropertyDescriptor descriptor = entry.getKey();
+            if (descriptor.isDynamic()) {
+                String value = validationContext.getProperty(descriptor).evaluateAttributeExpressions().getValue();
+                if (value != null) {
+                    hiveConfig.set(descriptor.getName(), value);
+                }
+            }
+        }
+        if (SecurityUtil.isSecurityEnabled(hiveConfig)) {
+            if (kerberosUserService == null) {
+                problems.add(new ValidationResult.Builder().valid(false).subject(getClass().getSimpleName())
+                        .explanation("Kerberos User Service must be provided when using a secure configuration").build());
+            }
+        } else if (kerberosUserService != null) {
+            getLogger().warn("Configuration does not have security enabled, Kerberos User Service will be ignored");
         }
         return problems;
     }
@@ -305,6 +382,10 @@ public class VendorHive3ConnectionPool extends AbstractControllerService impleme
     @OnEnabled
     public void onConfigured(ConfigurationContext context) throws InitializationException {
         ComponentLog log = getLogger();
+        // 이전 활성화에서 남은 Kerberos 상태를 초기화한다. 비보안 설정으로 재활성화된 경우
+        // 이전 KerberosUser로 relogin/doAs 하지 않도록 한다.
+        logoutKerberosUser();
+        this.ugi = null;
         String configFiles = context.getProperty(HIVE_CONFIGURATION_RESOURCES).evaluateAttributeExpressions().getValue();
         HiveConf hiveConf = this.hiveConfigurator.getConfigurationFromFiles(configFiles);
         String validationQuery = context.getProperty(VALIDATION_QUERY).evaluateAttributeExpressions().getValue();
@@ -318,7 +399,15 @@ public class VendorHive3ConnectionPool extends AbstractControllerService impleme
         // the driver jar is not a compile-time dependency (it is not available in public Maven repositories)
         // and must be provided at runtime — either via the "드라이버 위치(들)" property (권장) or on the
         // NiFi classpath(lib/). 아래에서 인스턴스 클래스로더를 명시적으로 지정해 두 경로 모두 지원한다.
-        String drv = "com.cloudera.hive.jdbc.HS2Driver";
+        String drv = DRIVER_CLASS_NAME;
+        // 드라이버 부재를 첫 getConnection이 아니라 활성화 시점에 드러낸다. 초기화(static 블록)는 하지 않고 존재만 확인한다.
+        try {
+            Class.forName(drv, false, this.getClass().getClassLoader());
+        } catch (ClassNotFoundException | LinkageError e) {
+            throw new InitializationException("Hive JDBC 드라이버 클래스(" + drv + ")를 찾을 수 없습니다. 라이선스상 드라이버는 번들에 포함되지 않으므로 "
+                    + "'드라이버 위치(들)' 프로퍼티에 드라이버 jar 경로를 지정하거나 NiFi lib/에 배치한 뒤 재기동해야 합니다. "
+                    + "자세한 내용은 nifi-argus-hive-bundle README의 'JDBC 드라이버 수동 적용'을 참고하십시오.", e);
+        }
         if (SecurityUtil.isSecurityEnabled((Configuration) hiveConf)) {
             KerberosUserService kerberosUserService = (KerberosUserService) context.getProperty(KERBEROS_USER_SERVICE).asControllerService(KerberosUserService.class);
             if (kerberosUserService == null)
@@ -335,7 +424,8 @@ public class VendorHive3ConnectionPool extends AbstractControllerService impleme
         }
         String user = context.getProperty(DB_USER).evaluateAttributeExpressions().getValue();
         String passw = context.getProperty(DB_PASSWORD).evaluateAttributeExpressions().getValue();
-        Long maxWaitMillis = context.getProperty(MAX_WAIT_TIME).evaluateAttributeExpressions().asTimePeriod(TimeUnit.MILLISECONDS);
+        // "-1"은 무한 대기를 의미한다(BasicDataSource maxWait -1).
+        Long maxWaitMillis = extractMillisWithInfinite(context.getProperty(MAX_WAIT_TIME).evaluateAttributeExpressions());
         Integer maxTotal = context.getProperty(MAX_TOTAL_CONNECTIONS).evaluateAttributeExpressions().asInteger();
         Integer minIdle = context.getProperty(MIN_IDLE).evaluateAttributeExpressions().asInteger();
         Integer maxIdle = context.getProperty(MAX_IDLE).evaluateAttributeExpressions().asInteger();
@@ -343,7 +433,9 @@ public class VendorHive3ConnectionPool extends AbstractControllerService impleme
         Long timeBetweenEvictionRunsMillis = extractMillisWithInfinite(context.getProperty(EVICTION_RUN_PERIOD).evaluateAttributeExpressions());
         Long minEvictableIdleTimeMillis = extractMillisWithInfinite(context.getProperty(MIN_EVICTABLE_IDLE_TIME).evaluateAttributeExpressions());
         Long softMinEvictableIdleTimeMillis = extractMillisWithInfinite(context.getProperty(SOFT_MIN_EVICTABLE_IDLE_TIME).evaluateAttributeExpressions());
-        this.dataSource = new BasicDataSource();
+        // Kerberos 사용 시 DBCP evictor 스레드(최소 유휴 커넥션 보충)가 만드는 커넥션도 인증된 UGI로 생성되도록
+        // 물리 커넥션 생성 자체를 doAs로 감싼다.
+        this.dataSource = new UgiAwareDataSource(() -> this.ugi);
         this.dataSource.setDriverClassName(drv);
         // 드라이버는 이 서비스 인스턴스 전용 클래스로더에서 로드한다. "드라이버 위치(들)" 프로퍼티로
         // 지정한 jar는 dynamicallyModifiesClasspath로 이 클래스로더에 추가되며, 미지정 시에도
@@ -377,9 +469,29 @@ public class VendorHive3ConnectionPool extends AbstractControllerService impleme
     @OnDisabled
     public void shutdown() {
         try {
-            this.dataSource.close();
+            // 활성화가 dataSource 생성 전에 실패했을 수 있으므로 null 여부를 확인한다.
+            if (this.dataSource != null) {
+                this.dataSource.close();
+            }
         } catch (SQLException e) {
             throw new ProcessException(e);
+        } finally {
+            // KerberosUser를 logout 하여 LoginContext/Subject 누수를 방지하고 Kerberos 상태를 초기화한다.
+            logoutKerberosUser();
+            this.ugi = null;
+            this.dataSource = null;
+        }
+    }
+
+    // 보관 중인 KerberosUser를 제거하고 logout 한다. logout 실패는 경고로만 기록한다.
+    private void logoutKerberosUser() {
+        KerberosUser kerberosUser = this.kerberosUserReference.getAndSet(null);
+        if (kerberosUser != null) {
+            try {
+                kerberosUser.logout();
+            } catch (Exception e) {
+                getLogger().warn("Error logging out KerberosUser " + kerberosUser.getPrincipal(), e);
+            }
         }
     }
 
@@ -387,6 +499,10 @@ public class VendorHive3ConnectionPool extends AbstractControllerService impleme
     // Kerberos가 사용 중인 경우 TGT(Ticket Granting Ticket) 만료 여부를 확인하고 필요하면 재로그인한 뒤,
     // UserGroupInformation.doAs를 통해 인증된 사용자 컨텍스트 안에서 커넥션을 얻는다.
     public Connection getConnection() throws ProcessException {
+        // 비활성화(shutdown) 후에는 dataSource가 null이므로 NPE 대신 ProcessException으로 알린다.
+        if (this.dataSource == null) {
+            throw new ProcessException("Connection pool is not enabled: " + this);
+        }
         try {
             if (this.ugi != null) {
                 getLogger().trace("getting UGI instance");
@@ -412,7 +528,7 @@ public class VendorHive3ConnectionPool extends AbstractControllerService impleme
                     throw e;
                 }
             }
-            getLogger().info("Simple Authentication");
+            getLogger().debug("Simple Authentication");
             return this.dataSource.getConnection();
         } catch (SQLException | java.io.IOException | InterruptedException e) {
             getLogger().error("Error getting Hive connection", e);

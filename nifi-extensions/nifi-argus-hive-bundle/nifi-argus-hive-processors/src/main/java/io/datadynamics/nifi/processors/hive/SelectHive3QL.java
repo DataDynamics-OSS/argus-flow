@@ -33,7 +33,7 @@ import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.PropertyDescriptor;
-import io.datadynamics.nifi.services.api.hive.VendorHiveDBCPService;
+import io.datadynamics.nifi.services.api.hive.Hive3DBCPService;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
@@ -311,7 +311,7 @@ public class SelectHive3QL extends AbstractHive3QLProcessor {
         }
 
         final ComponentLog logger = getLogger();
-        final VendorHiveDBCPService dbcpService = context.getProperty(HIVE_DBCP_SERVICE).asControllerService(VendorHiveDBCPService.class);
+        final Hive3DBCPService dbcpService = context.getProperty(HIVE_DBCP_SERVICE).asControllerService(Hive3DBCPService.class);
         final Charset charset = Charset.forName(context.getProperty(CHARSET).getValue());
 
         List<String> preQueries = getQueries(context.getProperty(HIVEQL_PRE_QUERY).evaluateAttributeExpressions(fileToProcess).getValue());

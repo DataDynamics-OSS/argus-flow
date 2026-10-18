@@ -9,6 +9,14 @@ the nifi-parquet-nar bundle of Apache NiFi 1.28.0 -- and has been modified
 for Apache NiFi 2.10. The NOTICE distributed with that original bundle is
 reproduced in full below, as required by section 4(d) of the Apache License 2.0.
 
+The nifi-argus-parquet-processors jar in this bundle also contains unmodified
+class files from the nifi-parquet-processors module of Apache NiFi 2.10.0
+(org.apache.nifi.parquet.utils, org.apache.nifi.parquet.stream,
+org.apache.nifi.parquet.hadoop.AvroParquetHDFSRecordWriter and
+org.apache.nifi.processors.parquet.PutParquet), Copyright The Apache Software
+Foundation, licensed under the Apache License 2.0. Their service registrations
+are not included, so only the Argus components are exposed by this bundle.
+
 ================================================================================
 NOTICE from Apache NiFi 1.28.0 -- nifi-parquet-nar
 ================================================================================

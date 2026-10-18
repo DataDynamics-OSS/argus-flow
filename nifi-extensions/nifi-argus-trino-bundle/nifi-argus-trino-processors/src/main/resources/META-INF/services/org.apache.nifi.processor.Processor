@@ -1,0 +1,3 @@
+io.datadynamics.nifi.trino.processors.QueryTrinoRecord
+io.datadynamics.nifi.trino.processors.ExecuteTrinoStatement
+io.datadynamics.nifi.trino.processors.MaintainTrinoTable

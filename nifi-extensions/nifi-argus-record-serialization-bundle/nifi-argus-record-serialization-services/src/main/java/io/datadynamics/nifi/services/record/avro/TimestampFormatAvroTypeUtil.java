@@ -63,6 +63,11 @@ public final class TimestampFormatAvroTypeUtil {
     private static final String LOGICAL_TYPE_TIMESTAMP_MILLIS = "timestamp-millis";
     private static final String LOGICAL_TYPE_TIMESTAMP_MICROS = "timestamp-micros";
 
+    // add-hours 보정값을 필드의 logical type 단위로 환산하기 위한 1시간당 값
+    // (timestamp-millis는 밀리초, timestamp-micros는 마이크로초 단위로 더해야 한다)
+    static final long MILLIS_PER_HOUR = 60L * 60L * 1000L;
+    static final long MICROS_PER_HOUR = MILLIS_PER_HOUR * 1000L;
+
     // 유틸리티 클래스이므로 인스턴스화를 막는다.
     private TimestampFormatAvroTypeUtil() {
     }
@@ -193,7 +198,7 @@ public final class TimestampFormatAvroTypeUtil {
                 final LogicalType logicalType = fieldSchema.getLogicalType();
                 if (logicalType != null && LOGICAL_TYPE_TIMESTAMP_MILLIS.equals(logicalType.getName())) {
                     final long longFromTimestamp = getLongFromTimestamp(rawValue, fieldSchema, fieldName, timestampPattern);
-                    final long result = longFromTimestamp + (((addHours * 60 * 60) + 0) * 1000);
+                    final long result = longFromTimestamp + addHours * MILLIS_PER_HOUR;
                     if (logger.isDebugEnabled()) {
                         logger.debug("[DFM] [TIMESTAMP_MILLIS] Raw Value = {}, Original Value = {}, Converted Value = {}, Timestamp Pattern = {}",
                                 rawValue, longFromTimestamp, result, timestampPattern);
@@ -201,7 +206,7 @@ public final class TimestampFormatAvroTypeUtil {
                     return result;
                 } else if (logicalType != null && LOGICAL_TYPE_TIMESTAMP_MICROS.equals(logicalType.getName())) {
                     final long longFromTimestamp = getLongFromTimestamp(rawValue, fieldSchema, fieldName, timestampPattern) * 1000L;
-                    final long result = longFromTimestamp + (((addHours * 60 * 60) + 0) * 1000);
+                    final long result = longFromTimestamp + addHours * MICROS_PER_HOUR; // micros 필드는 마이크로초 단위로 보정
                     if (logger.isDebugEnabled()) {
                         logger.debug("[DFM] [TIMESTAMP_MICROS] Raw Value = {}, Original Value = {}, Converted Value = {}, Timestamp Pattern = {}",
                                 rawValue, longFromTimestamp, result, timestampPattern);

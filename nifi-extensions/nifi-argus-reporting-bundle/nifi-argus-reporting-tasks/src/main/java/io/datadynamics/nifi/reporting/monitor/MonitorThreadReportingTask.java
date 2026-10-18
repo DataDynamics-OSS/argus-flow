@@ -52,7 +52,7 @@ public class MonitorThreadReportingTask extends AbstractReportingTask {
     public static final PropertyDescriptor THRESHOLD_PROPERTY = new PropertyDescriptor.Builder()
             .name("쓰레드 수 임계값")
             .displayName("쓰레드 수 임계값")
-            .description("경고를 생성하는 임계값을 나타냅니다. 백분율 또는 데이터 크기일 수 있습니다.")
+            .description("경고를 생성하는 JVM 전체 Thread 수의 임계값(양의 정수)입니다. 현재 Thread 수가 이 값을 초과하면 경고합니다.")
             .required(true)
             .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
             .defaultValue("300")
@@ -152,6 +152,14 @@ public class MonitorThreadReportingTask extends AbstractReportingTask {
         httpClientReference.set(HttpNotifyUtils.createHttpClient(connectTimeout));
     }
 
+    // JVM 프로세스 전체 CPU 사용 시간(나노초). com.sun.management 확장을 지원하지 않는 JVM이면 -1을 반환한다.
+    private static long getProcessCpuTime() {
+        if (ManagementFactory.getOperatingSystemMXBean() instanceof com.sun.management.OperatingSystemMXBean os) {
+            return os.getProcessCpuTime();
+        }
+        return -1L;
+    }
+
     // 매 스케줄 주기마다 실행되어 JVM의 현재 Thread 개수가 설정된 임계값을 초과하는지 확인한다.
     @Override
     public void onTrigger(final ReportingContext context) {
@@ -185,9 +193,12 @@ public class MonitorThreadReportingTask extends AbstractReportingTask {
             params.put("peakThreadCount", threadMXBean.getPeakThreadCount());
             params.put("daemonThreadCount", threadMXBean.getDaemonThreadCount());
             params.put("allThreadIdsCount", threadMXBean.getAllThreadIds().length);
-            params.put("currentThreadCpuTime", threadMXBean.getCurrentThreadCpuTime());
-            params.put("currentThreadUserTime", threadMXBean.getCurrentThreadUserTime());
+            // currentThreadCpuTime/currentThreadUserTime은 Reporting Task 자신의 스레드 값이라 의미가 없어 제거하고,
+            // JVM 프로세스 전체 CPU 시간(나노초, 지원하지 않으면 -1)을 대신 전달한다.
+            params.put("processCpuTime", getProcessCpuTime());
 
+            // Bulletin(기본 WARN 레벨)이 생성되도록 임계값 초과는 WARN으로 기록하고, 상세 정보는 INFO로 남긴다.
+            getLogger().warn("{}", String.format("JVM의 Thread 수(%s)가 설정한 임계값(%s)을 초과했습니다.", params.get("currentThreadCount"), thresholdValue));
             getLogger().info("Thread Reporting Task : {}", params);
 
             /////////////////////////////////////////

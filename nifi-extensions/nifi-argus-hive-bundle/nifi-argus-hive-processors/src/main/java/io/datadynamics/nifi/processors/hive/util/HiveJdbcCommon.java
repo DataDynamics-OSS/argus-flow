@@ -267,6 +267,10 @@ public class HiveJdbcCommon {
             // Hive는 컬럼 이름을 "table.column" 형태로 반환하므로, 마지막 마침표 뒤의 문자열만 컬럼 이름으로 취한다.
             int columnNameDelimiter = columnNameFromMeta.lastIndexOf(".");
             String columnName = columnNameFromMeta.substring(columnNameDelimiter + 1);
+            if (convertNames) {
+                // 업스트림 1.28과 같이 컬럼 이름도 Avro에서 허용하는 이름([A-Za-z_][A-Za-z0-9_]*)으로 정규화한다.
+                columnName = normalizeNameForAvro(columnName);
+            }
             switch (meta.getColumnType(i)) {
                 case CHAR:
                 case LONGNVARCHAR:

@@ -27,7 +27,7 @@ import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.ParseDriver;
 import org.apache.hadoop.hive.ql.parse.ParseException;
 import org.apache.nifi.components.PropertyDescriptor;
-import io.datadynamics.nifi.services.api.hive.VendorHiveDBCPService;
+import io.datadynamics.nifi.services.api.hive.Hive3DBCPService;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.processor.AbstractSessionFactoryProcessor;
@@ -55,7 +55,7 @@ public abstract class AbstractHive3QLProcessor extends AbstractSessionFactoryPro
             .displayName("Hive 데이터베이스 연결 풀링 서비스")
             .description("Hive 데이터베이스에 대한 커넥션을 획득하는 데 사용되는 Hive 컨트롤러 서비스")
             .required(true)
-            .identifiesControllerService(VendorHiveDBCPService.class)
+            .identifiesControllerService(Hive3DBCPService.class)
             .build();
     public static final PropertyDescriptor CHARSET = new PropertyDescriptor.Builder()
             .name("hive3-charset")

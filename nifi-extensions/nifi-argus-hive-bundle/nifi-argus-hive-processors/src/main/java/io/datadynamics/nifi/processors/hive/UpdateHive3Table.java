@@ -27,7 +27,7 @@ import org.apache.nifi.annotation.behavior.*;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.*;
-import io.datadynamics.nifi.services.api.hive.VendorHiveDBCPService;
+import io.datadynamics.nifi.services.api.hive.Hive3DBCPService;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
@@ -136,7 +136,7 @@ public class UpdateHive3Table extends AbstractProcessor {
             .displayName("Hive 데이터베이스 연결 풀링 서비스")
             .description("Hive 데이터베이스에 대한 커넥션을 얻기 위해 사용하는 Hive 컨트롤러 서비스")
             .required(true)
-            .identifiesControllerService(VendorHiveDBCPService.class)
+            .identifiesControllerService(Hive3DBCPService.class)
             .build();
     static final PropertyDescriptor TABLE_NAME = new PropertyDescriptor.Builder()
             .name("hive3-table-name")
@@ -402,7 +402,7 @@ public class UpdateHive3Table extends AbstractProcessor {
             }
 
             final String storageFormat = context.getProperty(TABLE_STORAGE_FORMAT).getValue();
-            final VendorHiveDBCPService dbcpService = context.getProperty(HIVE_DBCP_SERVICE).asControllerService(VendorHiveDBCPService.class);
+            final Hive3DBCPService dbcpService = context.getProperty(HIVE_DBCP_SERVICE).asControllerService(Hive3DBCPService.class);
             try (final Connection connection = dbcpService.getConnection()) {
 
                 final Map<String, String> attributes = new HashMap<>(flowFile.getAttributes());

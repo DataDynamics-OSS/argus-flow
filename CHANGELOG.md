@@ -9,6 +9,26 @@
 ## [Unreleased]
 
 ### Added
+- **Trino 번들** (`nifi-argus-trino`) — Trino를 조회·변환·유지보수 엔진으로 씁니다(Trino JDBC 483).
+  사용 예제는 [`nifi-extensions/nifi-argus-trino-bundle/README.md`](nifi-extensions/nifi-argus-trino-bundle/README.md).
+  - `StandardTrinoConnectionService`: `DBCPService`를 구현해 `ExecuteSQL`·`PutDatabaseRecord`에도 연결됩니다.
+    인증 NONE/PASSWORD/JWT/Kerberos/OAuth2, `source`·client tags·세션 프로퍼티(`session.*`)·roles·spooling 인코딩.
+    Trino JDBC 연결은 HTTP 기반이라 풀을 두지 않습니다.
+  - 외부 드라이버 jar 경로와 클래스명을 지정해 Starburst JDBC 등 Trino 호환 드라이버를 쓸 수 있습니다.
+    외부 jar는 서비스 전용 child-first 클래스로더로 로드되어 번들 드라이버에 가려지지 않습니다.
+  - `QueryTrinoRecord`: SELECT 결과를 Record Writer로 스트리밍합니다. `trino.query.id`와 실행 통계를 속성으로
+    남기고, 중지하면 Trino 쿼리도 취소합니다.
+  - `ExecuteTrinoStatement`: CTAS·`INSERT INTO ... SELECT`·`MERGE` 등 DDL/DML 한 문장을 실행합니다.
+  - `MaintainTrinoTable`: Iceberg `optimize`·`expire_snapshots`·`remove_orphan_files`, Delta Lake `optimize`·`vacuum`,
+    Hive `sync_partition_metadata`, `ANALYZE`.
+  - 오래 걸리는 문장용 `BACKGROUND` 실행 모드: 프로세서 전용 스레드 풀에서 실행하고 NiFi 스레드는 바로 돌려줍니다.
+  - Trino를 통한 INSERT 적재 프로세서는 두지 않습니다. 적재는 `PutIceberg`·`PutDeltaLake`가 맡습니다.
+- `MergeParquet`: 선택 프로퍼티 `Kerberos User Service`로 보안 HDFS를 지원합니다. 원본 경로로 일반 디렉토리를
+  주면 그 안의 `*.parquet`를 병합합니다.
+- `VendorHive3ConnectionPool`: 동적 프로퍼티를 HiveConf에 반영합니다. `Max Wait Time`에 `-1`(무한 대기)을 쓸 수 있습니다.
+- `PutKudu`: Apache NiFi 1.28의 프로퍼티 이름을 현재 이름으로 마이그레이션합니다(`migrateProperties`).
+- `Hive3ConnectionPool`·`PutHive3Streaming`: 1.28의 Kerberos principal·keytab/password 설정을 Kerberos User Service로
+  자동 이전합니다.
 - **트리거형 List 프로세서** (`nifi-argus-listing`) — `ListFile`, `ListSFTP`, `ListFTP`, `ListS3`,
   `ListHDFS`(패키지 `io.datadynamics.nifi.processors.listing.*`). NiFi 2.10.0의 List 프로세서를 포크해 Upstream
   연결을 받도록(INPUT_REQUIRED) 바꿨습니다. 입력 FlowFile마다 그 속성으로 정한 대상 하나를 List하고,
@@ -58,6 +78,32 @@
   `NIFI_SSL_DAYS`로 조정). IP로 NiFi에 접속할 때 발생하는 `Invalid SNI` 해결용.
 
 ### Changed
+- **업그레이드 시 동작이 바뀝니다.** 이전에 success로 넘어가던 입력 일부가 failure로 갑니다.
+  - `MultilineCsvParser`: 잘못된 입력 바이트, 출력 문자셋에 없는 문자(예: EUC-KR 출력의 확장 한글), 닫히지 않은
+    Quote, 닫는 Quote 뒤의 구분자가 아닌 문자는 치환·병합하지 않고 failure로 보냅니다. 오류 위치를 `csv.error`에
+    남기며(최대 1024자), UTF-8 BOM은 제거합니다.
+  - `MergeParquet`: 대상 파일이 원본 glob에 포함되거나, 입력 파일 간 스키마가 다르면 failure입니다.
+  - 설정 검증 강화: `MultilineCsvParser`의 2글자 이상 Quote·1글자 구분자, `BulkOracleInsertProcessor`의
+    Bulk Rows 0, `PutKudu`의 잘못된 타임스탬프 패턴 JSON(EL 미사용 시)은 invalid입니다.
+- `MultilineCsvParser`: 문자셋 `CP949`를 Java 기본 해석(`x-IBM949`) 대신 `x-windows-949`로 해석합니다. 기존 설정을
+  바꿀 필요는 없으며 `csv.input.charset` 값이 `x-windows-949`가 됩니다.
+- `BulkOracleInsertProcessor`: 값을 PreparedStatement로 바인딩하고 스키마·테이블·컬럼명을 검증합니다(영문자로
+  시작하는 영숫자·`_`·`$`·`#` 또는 큰따옴표 인용). 입력 연결이 필요합니다(`INPUT_REQUIRED`). decimal이 아닌
+  bytes 값은 문자열 대신 `setBytes`로 바인딩합니다.
+- `ExecuteFastSQL`: 성공하면 입력 FlowFile을 제거하고, 오류 시 penalize 후 `failure`로 보냅니다. BINARY·BLOB은
+  Base64, CLOB은 내용 그대로 씁니다. 쿼리도 입력 연결도 없으면 시작을 거부합니다. 쿼리 콘텐츠는 UTF-8로 읽습니다.
+- `VendorHive3ConnectionPool`: 벤더 드라이버가 없으면 Enable 단계에서 실패합니다. 클래스패스 설정이나 동적
+  프로퍼티로 Kerberos가 켜져 있는데 Kerberos User Service가 없으면 invalid입니다.
+- `SelectHive3QL`·`PutHive3QL`·`UpdateHive3Table`: `Hive3ConnectionPool`과 `VendorHive3ConnectionPool`을 모두 받습니다.
+  `hive-normalize-avro=true`이면 Avro 컬럼명을 정규화합니다(Apache NiFi 1.28과 같은 동작).
+- `MonitorMemoryUsageReportingTask`: 리포팅 간격 안에서는 알림을 반복하지 않고, 백분율 임계치를 max 힙 기준으로
+  계산합니다. 임계치 초과는 두 Monitor 태스크 모두 WARN으로 남겨 bulletin이 생깁니다.
+- `MonitorThreadReportingTask`·`HttpNotificationReportingTask` payload: `currentThreadCpuTime`·`currentThreadUserTime`을
+  빼고 JVM 프로세스 전체 `processCpuTime`을 넣었습니다. 이 키를 읽는 수신 측은 변경이 필요합니다.
+- `MergeParquet`: `@TriggerSerially`, 인스턴스별 클래스로더(`@RequiresInstanceClassLoading`)를 씁니다.
+  `merge.target.qualifiedPath`는 스킴을 포함한 실제 경로입니다. 대상을 쓰지 않은 경우(매칭 0건) 대상 속성을 남기지 않습니다.
+- parquet NAR이 업스트림 `org.apache.nifi.*` parquet 컴포넌트를 함께 노출하지 않습니다(argus 3종만 등록).
+  업스트림 컴포넌트는 NiFi 기본 `nifi-parquet-nar`에서 제공됩니다.
 - 배포 패키지(tar.gz/RPM)가 `conf/login-identity-providers.xml` 오버레이를 포함하여
   single-user 계정 `admin`을 기본값으로 설정. **공개된 기본값이므로 설치 후
   `nifi.sh set-single-user-credentials`로 반드시 교체해야 합니다** ([SECURITY.md](SECURITY.md) 참조).
@@ -71,6 +117,21 @@
   `MVNW_REPOURL` 환경변수를 사용.
 
 ### Fixed
+- `ExecuteFastSQL`: Fetch Size 경계마다 한 행씩 빠지던 문제, 기본값(Fetch Size 0)에서 결과가 0건이던 문제,
+  여러 스레드가 ProcessSession을 동시에 사용하던 문제.
+- `BulkOracleInsertProcessor`: 입력 연결을 받을 수 없게 선언되어 동작하지 않던 문제, 생성 SQL 끝의 `;` 때문에
+  Oracle이 INSERT를 거부하던 문제, 배치 경계에서 레코드가 빠지던 문제, SQL 인젝션, NULL이 문자열로 들어가던 문제,
+  Query Timeout이 1000배로 적용되던 문제, 스키마 없이 테이블명만 쓸 수 없던 문제.
+- `MergeParquet`: 대상 파일이 원본 glob 안에 있으면 재실행 때 이전 병합 결과가 지워지던 문제, 병합 실패 시
+  기존 대상과 원본이 사라지거나 깨진 파일이 남던 문제, 스키마가 다른 입력의 값이 뒤바뀌거나 컬럼이 빠지던 문제,
+  파일마다 FileSystem 인스턴스가 누수되던 문제, REQUIRED·중첩 INT96 컬럼 타입이 바뀌던 문제, 파일명 `.`·`..`로
+  디렉토리가 재귀 삭제될 수 있던 문제.
+- `MultilineCsvParser`: Quote 보존 모드에서 값이 이중으로 감싸지던 문제, `||`처럼 자기 겹침 구분자에서 값이 잘못
+  나뉘던 문제, `CP949`에서 확장 한글 8,822자가 깨지던 문제, EL 평가 오류 시 FlowFile이 무한 재시도되던 문제.
+- `VendorHive3ConnectionPool`: Disable 후에도 Kerberos 상태가 남아 이전 principal로 접속하던 문제, KerberosUser를
+  logout하지 않던 문제, DBCP evictor가 만드는 커넥션이 Kerberos Subject 밖에서 생성되던 문제.
+- `TimestampFormat*RecordSetWriter`: `add-hours`가 `timestamp-micros` 필드에 1/1000만 적용되던 문제.
+- `PutKudu`: 타임스탬프 패턴 JSON 파싱에 실패한 뒤에도 처리를 계속해 세션 오류가 나던 문제.
 - 배포 tar.gz에 빌드 캐시의 런타임 산출물(생성된 keystore 등)이 포함될 수 있던 문제.
   조립에서 `conf/*.p12`·`logs/`·`work/` 등을 제외합니다.
 - `scripts/ssl/ssl-generate.sh`가 `#!/bin/sh`로 선언되었으나 bash 전용 문법을 사용해

@@ -10,7 +10,7 @@ Apache NiFi **2.10.0 / Java 21** 기반 커스텀 확장 번들 모음(Maven rea
 
 ---
 
-## 프로세서 (Processors) — 22종
+## 프로세서 (Processors) — 25종
 
 ### CDC 소스 — `nifi-argus-debezium-bundle`
 Debezium Embedded Engine 3.2.2 기반. 변경 이벤트를 JSON FlowFile로 방출(`@PrimaryNodeOnly`, at-least-once).
@@ -38,6 +38,15 @@ Debezium Embedded Engine 3.2.2 기반. 변경 이벤트를 JSON FlowFile로 방�
 | `PutDeltaLake` | `nifi-argus-deltalake-bundle` | Delta Kernel 기반 경로형 Delta Lake 싱크 |
 | `PutKudu` | `nifi-argus-kudu-bundle` | Apache Kudu 테이블에 레코드 적재 |
 
+### Trino — `nifi-argus-trino-bundle`
+Trino JDBC 483 기반 조회·변환·유지보수(신규 구현, [사용 예제](nifi-argus-trino-bundle/README.md)). 적재는 `PutIceberg`/`PutDeltaLake`가 맡는다.
+
+| 이름 | 기능 |
+|---|---|
+| `QueryTrinoRecord` | Trino SELECT 결과를 Record Writer로 스트리밍, query id·통계 속성, 중지 시 쿼리 취소 |
+| `ExecuteTrinoStatement` | DDL/DML/ELT 단일 문장 실행(CTAS, INSERT ... SELECT, MERGE 등), 백그라운드 실행 모드 |
+| `MaintainTrinoTable` | Iceberg/Delta/Hive 테이블 유지보수(OPTIMIZE, 스냅샷 만료, orphan 정리, VACUUM, 파티션 동기화, ANALYZE) |
+
 ### Hive / ORC — `nifi-argus-hive-bundle`
 | 이름 | 기능 |
 |---|---|
@@ -62,7 +71,7 @@ Debezium Embedded Engine 3.2.2 기반. 변경 이벤트를 JSON FlowFile로 방�
 
 ---
 
-## 컨트롤러 서비스 (Controller Services) — 7종
+## 컨트롤러 서비스 (Controller Services) — 8종
 
 ### 레코드 리더/라이터 — `nifi-argus-record-serialization-bundle`, `nifi-argus-parquet-bundle`
 | 이름 | 기능 |
@@ -83,6 +92,11 @@ Debezium Embedded Engine 3.2.2 기반. 변경 이벤트를 JSON FlowFile로 방�
 | `HiveCatalogService` | Hive Metastore 기반 Iceberg 카탈로그 |
 | `HadoopCatalogService` | Hadoop 파일시스템 기반 Iceberg 카탈로그 |
 
+### Trino 연결 — `nifi-argus-trino-bundle`
+| 이름 | 기능 |
+|---|---|
+| `StandardTrinoConnectionService` | Trino JDBC 연결(풀 없음, `DBCPService` 호환). 인증 NONE/PASSWORD/JWT/Kerberos/OAuth2, 세션 프로퍼티·source·client tags . 외부 드라이버 jar(Starburst JDBC 등) 지정 가능(child-first 로드) |
+
 ---
 
 ## 리포팅 태스크 (Reporting Tasks) — 5종 · `nifi-argus-reporting-bundle`
@@ -93,7 +107,7 @@ Debezium Embedded Engine 3.2.2 기반. 변경 이벤트를 JSON FlowFile로 방�
 | `MonitorMemoryUsageReportingTask` | JVM 힙 사용률 임계 초과 시 경고 |
 | `MonitorMemoryPoolReportingTask` | 개별 메모리 풀 사용률 임계 초과 시 경고 |
 | `MonitorThreadReportingTask` | 스레드 상태(데드락 등) 모니터링 |
-| `HttpNotificationReportingTask` | 이벤트를 웹훅 URL로 HTTP POST 알림 (design §6.1 재구현) |
+| `HttpNotificationReportingTask` | 이벤트를 웹훅 URL로 HTTP POST 알림 (NiFi 2.x에서 제거된 bootstrap notification service 재구현) |
 
 ---
 
@@ -120,6 +134,7 @@ NAR 클래스로더 계층에서 상위 API 번들로 분리되어 다른 번들
 |---|---|---|
 | `HiveDBCPService`, `Hive3DBCPService`, `VendorHiveDBCPService` | `nifi-argus-hive-bundle` | Hive DBCP 커넥션 풀 계약 |
 | `IcebergCatalogService`, `IcebergCatalogType`, `IcebergCatalogProperty` | `nifi-argus-iceberg-bundle` | Iceberg 카탈로그 서비스 계약 |
+| `TrinoConnectionService`, `TrinoQueryInfo` | `nifi-argus-trino-bundle` | Trino 연결·query id/통계 계약(`DBCPService` 확장) |
 
 ---
 

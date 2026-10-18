@@ -2,7 +2,7 @@
  * Modifications Copyright 2026 Data Dynamics Inc.
  *
  * Ported from Apache NiFi 2.10.0 (rel/nifi-2.10.0) for FlowFile-triggered listing
- * (nifi-argus-listing-bundle, design/listing-processors-port.md):
+ * (nifi-argus-listing-bundle):
  *   nifi-extension-bundles/nifi-standard-bundle/nifi-standard-processors/src/main/java/org/apache/nifi/processors/standard/socket/ClientAuthenticationException.java
  */
 /*

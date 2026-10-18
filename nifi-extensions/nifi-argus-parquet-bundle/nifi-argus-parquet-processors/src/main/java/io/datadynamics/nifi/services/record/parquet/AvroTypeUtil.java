@@ -69,6 +69,11 @@ public class AvroTypeUtil {
     private static final String LOGICAL_TYPE_TIMESTAMP_MICROS = "timestamp-micros";
     private static final String DEFAULT_TIMESTAMP_FORMAT = "yyyy-MM-dd HH:mm:ss";
 
+    // add-hours 보정값을 필드의 logical type 단위로 환산하기 위한 1시간당 값
+    // (timestamp-millis는 밀리초, timestamp-micros는 마이크로초 단위로 더해야 한다)
+    static final long MILLIS_PER_HOUR = 60L * 60L * 1000L;
+    static final long MICROS_PER_HOUR = MILLIS_PER_HOUR * 1000L;
+
     /**
      * NiFi RecordSchema를 Avro Schema로 변환한다. upstream 구현에 그대로 위임한다.
      */
@@ -236,7 +241,7 @@ public class AvroTypeUtil {
                 final LogicalType logicalType = fieldSchema.getLogicalType();
                 if (logicalType != null && LOGICAL_TYPE_TIMESTAMP_MILLIS.equals(logicalType.getName())) {
                     Long longFromTimestamp = getLongFromTimestamp(rawValue, fieldSchema, fieldName, timestampPattern);
-                    long result = longFromTimestamp + (((addHours * 60 * 60) + 0) * 1000);
+                    long result = longFromTimestamp + addHours * MILLIS_PER_HOUR;
                     if (logger.isDebugEnabled()) {
                         logger.debug("[DFM] [TIMESTAMP_MILLIS] Raw Value = {}, Original Value = {}, Converted Value = {}, Timestamp Pattern = {}",
                                 rawValue, longFromTimestamp, result, timestampPattern);
@@ -244,7 +249,7 @@ public class AvroTypeUtil {
                     return result; // FIXED
                 } else if (logicalType != null && LOGICAL_TYPE_TIMESTAMP_MICROS.equals(logicalType.getName())) {
                     long longFromTimestamp = getLongFromTimestamp(rawValue, fieldSchema, fieldName, timestampPattern) * 1000L;
-                    long result = longFromTimestamp + (((addHours * 60 * 60) + 0) * 1000);
+                    long result = longFromTimestamp + addHours * MICROS_PER_HOUR; // micros 필드는 마이크로초 단위로 보정
                     if (logger.isDebugEnabled()) {
                         logger.debug("[DFM] [TIMESTAMP_MICROS] Raw Value = {}, Original Value = {}, Converted Value = {}, Timestamp Pattern = {}",
                                 rawValue, longFromTimestamp, result, timestampPattern);

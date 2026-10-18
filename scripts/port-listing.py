@@ -15,7 +15,6 @@
 """nifi-argus-listing-bundle 포크 원본 생성기.
 
 업스트림 NiFi 소스를 복사하면서 패키지·클래스명만 바꾼다(동작 변경 없음).
-설계: design/listing-processors-port.md §7
 
   1) 최초 이관 — 결과물이 "커밋 ①(원문 복사 + 이름 변경)"이 된다.
        scripts/fetch-upstream.sh 2.10.0
@@ -129,7 +128,7 @@ def header(version: str, upstream_rel: str) -> str:
         " * Modifications Copyright 2026 Data Dynamics Inc.\n"
         " *\n"
         f" * Ported from Apache NiFi {version} (rel/nifi-{version}) for FlowFile-triggered listing\n"
-        " * (nifi-argus-listing-bundle, design/listing-processors-port.md):\n"
+        " * (nifi-argus-listing-bundle):\n"
         f" *   {upstream_rel}\n"
         " */\n"
     )

@@ -30,7 +30,7 @@ import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.PropertyDescriptor;
-import io.datadynamics.nifi.services.api.hive.VendorHiveDBCPService;
+import io.datadynamics.nifi.services.api.hive.Hive3DBCPService;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.processor.ProcessContext;
@@ -139,7 +139,7 @@ public class PutHive3QL extends AbstractHive3QLProcessor {
     private ExceptionHandler<FunctionContext> exceptionHandler;
     // DBCP 컨트롤러 서비스로부터 커넥션을 얻고, 로깅/프로버넌스에 사용할 커넥션 URL을 FunctionContext에 저장한다.
     private final InitConnection<FunctionContext, Connection> initConnection = (context, session, fc, ffs) -> {
-        final VendorHiveDBCPService dbcpService = context.getProperty(HIVE_DBCP_SERVICE).asControllerService(VendorHiveDBCPService.class);
+        final Hive3DBCPService dbcpService = context.getProperty(HIVE_DBCP_SERVICE).asControllerService(Hive3DBCPService.class);
         final Connection connection = dbcpService.getConnection();
         fc.connectionUrl = dbcpService.getConnectionURL();
         return connection;

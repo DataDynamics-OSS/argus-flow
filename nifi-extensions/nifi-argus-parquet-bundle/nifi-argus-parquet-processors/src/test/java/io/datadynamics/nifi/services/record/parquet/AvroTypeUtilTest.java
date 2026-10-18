@@ -55,6 +55,9 @@ public class AvroTypeUtilTest {
             "  \"properties\" : { \"column.all.pattern\" : \"yyyyMMddHHmmss\" }\n" +
             "}";
 
+    // timestamp-micros 필드(ts)를 가진 Avro 스키마. 패턴은 SCHEMA_JSON과 동일하다.
+    private static final String MICROS_SCHEMA_JSON = SCHEMA_JSON.replace("timestamp-millis", "timestamp-micros");
+
     /**
      * 테스트에서 사용할 NiFi Record를 생성하는 헬퍼 메서드.
      * ts(TIMESTAMP)와 name(STRING) 두 개의 필드를 가지며,
@@ -100,6 +103,46 @@ public class AvroTypeUtilTest {
 
         final long expected = Timestamp.valueOf(LocalDateTime.of(2024, 1, 2, 3, 4, 5)).getTime() + 9L * 3600L * 1000L;
         assertEquals(expected, rec.get("ts"));
+    }
+
+    /**
+     * add-hours가 음수(-9시간)일 때도 timestamp-millis 필드에 밀리초 단위(-9 * 3600 * 1000ms)로
+     * 보정되는지 검증한다.
+     */
+    @Test
+    void addNegativeHoursAppliedToMillis() throws Exception {
+        final Schema avroSchema = new Schema.Parser().parse(SCHEMA_JSON);
+        final GenericRecord rec = AvroTypeUtil.createAvroRecord(record("20240102030405"), avroSchema, "properties", -9);
+
+        final long expected = Timestamp.valueOf(LocalDateTime.of(2024, 1, 2, 3, 4, 5)).getTime() - 9L * 3600L * 1000L;
+        assertEquals(expected, rec.get("ts"));
+    }
+
+    /**
+     * timestamp-micros 필드는 파싱 결과가 마이크로초(밀리초 * 1000)로 기록되는지 검증한다(addHours=0).
+     */
+    @Test
+    void timestampMicrosWithoutAddHours() throws Exception {
+        final Schema avroSchema = new Schema.Parser().parse(MICROS_SCHEMA_JSON);
+        final GenericRecord rec = AvroTypeUtil.createAvroRecord(record("20240102030405"), avroSchema, "properties", 0);
+
+        final long expected = Timestamp.valueOf(LocalDateTime.of(2024, 1, 2, 3, 4, 5)).getTime() * 1000L;
+        assertEquals(expected, rec.get("ts"));
+    }
+
+    /**
+     * timestamp-micros 필드에 add-hours(9시간)를 적용하면 마이크로초 단위(9 * 3600 * 1,000,000us)로
+     * 더해지는지 검증한다. 이전에는 밀리초 단위 값(9 * 3600 * 1000)이 더해져 보정량이 1/1000이었다.
+     */
+    @Test
+    void addHoursAppliedToMicrosInMicroseconds() throws Exception {
+        final Schema avroSchema = new Schema.Parser().parse(MICROS_SCHEMA_JSON);
+        final GenericRecord rec = AvroTypeUtil.createAvroRecord(record("20240102030405"), avroSchema, "properties", 9);
+
+        final long expected = Timestamp.valueOf(LocalDateTime.of(2024, 1, 2, 3, 4, 5)).getTime() * 1000L + 9L * 3600L * 1_000_000L;
+        assertEquals(expected, rec.get("ts"));
+        // 보정 후 값을 시각으로 되돌리면 정확히 9시간 뒤여야 한다.
+        assertEquals(Timestamp.valueOf(LocalDateTime.of(2024, 1, 2, 12, 4, 5)).getTime() * 1000L, rec.get("ts"));
     }
 
     /**

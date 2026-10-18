@@ -68,6 +68,6 @@ $NIFI_HOME/bin/nifi.sh restart          # lib/ 는 기동 시에만 로드됨
 
 | 증상 | 원인 / 조치 |
 |---|---|
-| `ClassNotFoundException: com.cloudera.hive.jdbc.HS2Driver` | 드라이버 jar 미적용. 방법 A는 경로/URL 확인, 방법 B는 `lib/` 배치 후 **재기동** 여부 확인 |
+| 서비스 Enable 실패: `Hive JDBC 드라이버 클래스(com.cloudera.hive.jdbc.HS2Driver)를 찾을 수 없습니다` (원인 `ClassNotFoundException`) | 드라이버 jar 미적용. 방법 A는 경로/URL 확인, 방법 B는 `lib/` 배치 후 **재기동** 여부 확인 |
 | 클러스터 일부 노드만 실패 | 해당 노드에 드라이버 jar 누락. 모든 노드에 동일 적용 |
 | Kerberos 인증 실패 | `KerberosUserService` 미설정 또는 `hive-site.xml`의 보안 속성 누락 |

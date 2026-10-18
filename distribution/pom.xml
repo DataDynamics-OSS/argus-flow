@@ -131,6 +131,25 @@
             <version>${project.version}</version>
             <type>nar</type>
         </dependency>
+        <!-- Trino 조회·변환·유지보수 (신규 구현). services-api ← services/nar 계층이라 3종 모두 명시 -->
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-trino-services-api-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-trino-services-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.datadynamics.nifi</groupId>
+            <artifactId>nifi-argus-trino-nar</artifactId>
+            <version>${project.version}</version>
+            <type>nar</type>
+        </dependency>
         <!-- 운영 거버넌스용 Flow Analysis Rule (스레드 풀·동시성·리스팅 스케줄·데드엔드·Iceberg 머지) -->
         <dependency>
             <groupId>io.datadynamics.nifi</groupId>
