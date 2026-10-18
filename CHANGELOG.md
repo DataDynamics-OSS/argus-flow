@@ -23,6 +23,17 @@
     Hive `sync_partition_metadata`, `ANALYZE`.
   - 오래 걸리는 문장용 `BACKGROUND` 실행 모드: 프로세서 전용 스레드 풀에서 실행하고 NiFi 스레드는 바로 돌려줍니다.
   - Trino를 통한 INSERT 적재 프로세서는 두지 않습니다. 적재는 `PutIceberg`·`PutDeltaLake`가 맡습니다.
+- `CompactHive3Table` (Hive 번들): HiveServer2로 Hive 테이블·파티션의 compaction을 실행합니다. 사용 예제는
+  [`nifi-extensions/nifi-argus-hive-bundle/README.md`](nifi-extensions/nifi-argus-hive-bundle/README.md).
+  - ACID 테이블(full ACID, insert-only)은 `ALTER TABLE ... COMPACT 'major'|'minor'`를 비동기로 요청하고
+    `SHOW COMPACTIONS`로 상태를 추적합니다. Non-ACID ORC managed 테이블은 `CONCATENATE`로 병합합니다.
+  - 진행 중이면 FlowFile을 penalize해 `in progress`로 보냅니다. 이 relationship을 프로세서 자신에게 연결하면
+    Penalty Duration 간격으로 상태를 확인합니다. 진행 상황은 FlowFile 속성(`hive.compaction.*`)에 있어 NiFi를
+    재시작해도 이어서 추적합니다.
+  - 선택적으로 compaction 전후 `COUNT(*)`(통계 응답 끔)를 비교해 다르면 `count mismatch`로 보냅니다.
+  - `Completion State`(`ready for cleaning`/`succeeded`), `Initiation Timeout`, `Compaction Timeout`을 지원합니다.
+  - `SHOW COMPACTIONS`는 컬럼 이름으로 해석해 Hive 3.1과 Hive 4.0의 컬럼 차이를 흡수합니다. 같은 대상에 이미
+    대기 중인 요청이 있으면 그 compaction을 이어서 추적합니다. Apache Hive 3.1.3·4.0.1로 검증했습니다.
 - `MergeParquet`: 선택 프로퍼티 `Kerberos User Service`로 보안 HDFS를 지원합니다. 원본 경로로 일반 디렉토리를
   주면 그 안의 `*.parquet`를 병합합니다.
 - `VendorHive3ConnectionPool`: 동적 프로퍼티를 HiveConf에 반영합니다. `Max Wait Time`에 `-1`(무한 대기)을 쓸 수 있습니다.

@@ -31,6 +31,11 @@
 
     <properties>
         <hive.version>3.1.3</hive.version>
+        <!-- CompactHive3Table 통합 테스트: 공식 apache/hive 이미지와 같은 버전의 hive-jdbc standalone jar -->
+        <hive.it.hive3.image>apache/hive:3.1.3</hive.it.hive3.image>
+        <hive.it.hive3.jdbc.version>3.1.3</hive.it.hive3.jdbc.version>
+        <hive.it.hive4.image>apache/hive:4.0.1</hive.it.hive4.image>
+        <hive.it.hive4.jdbc.version>4.0.1</hive.it.hive4.jdbc.version>
     </properties>
 
     <dependencies>
@@ -278,5 +283,69 @@
             <version>2.4.240</version>
             <scope>test</scope>
         </dependency>
+        <!-- testcontainers 버전은 NiFi 2.10.0 상위 pom 의 testcontainers-bom 이 관리한다 -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <!--
+                  통합 테스트용 Apache hive-jdbc standalone jar 를 target/hive-jdbc 로 복사한다. 이 jar 는 Hive·Hadoop·Thrift 등을
+                  통째로 담고 있어 테스트 classpath 에 두면 번들의 hive-exec 3.1.3 과 충돌하므로, 테스트가 별도 클래스로더로 읽는다.
+                -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-hive-jdbc-for-it</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/hive-jdbc</outputDirectory>
+                            <stripVersion>false</stripVersion>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>org.apache.hive</groupId>
+                                    <artifactId>hive-jdbc</artifactId>
+                                    <version>${hive.it.hive3.jdbc.version}</version>
+                                    <classifier>standalone</classifier>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.apache.hive</groupId>
+                                    <artifactId>hive-jdbc</artifactId>
+                                    <version>${hive.it.hive4.jdbc.version}</version>
+                                    <classifier>standalone</classifier>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <hive.it.jdbc.dir>${project.build.directory}/hive-jdbc</hive.it.jdbc.dir>
+                        <hive.it.hive3.image>${hive.it.hive3.image}</hive.it.hive3.image>
+                        <hive.it.hive3.jdbc.jar>hive-jdbc-${hive.it.hive3.jdbc.version}-standalone.jar</hive.it.hive3.jdbc.jar>
+                        <hive.it.hive4.image>${hive.it.hive4.image}</hive.it.hive4.image>
+                        <hive.it.hive4.jdbc.jar>hive-jdbc-${hive.it.hive4.jdbc.version}-standalone.jar</hive.it.hive4.jdbc.jar>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

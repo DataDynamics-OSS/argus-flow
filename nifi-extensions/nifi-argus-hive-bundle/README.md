@@ -10,9 +10,86 @@ Apache Hive 3.x 연동 확장 번들. Hive/ORC 프로세서와 Hive DBCP 커넥�
 | 프로세서 | `PutHive3Streaming` | Hive3 Streaming API 적재 |
 | 프로세서 | `UpdateHive3Table` | Hive3 테이블 스키마 동기화 |
 | 프로세서 | `TriggerHiveMetaStoreEvent` | Hive Metastore 이벤트 트리거 |
+| 프로세서 | `CompactHive3Table` | ACID 테이블 major/minor compaction 요청·상태 추적, Non-ACID ORC `CONCATENATE`, 전후 행 수 검증 |
 | 프로세서 | `PutORC` | ORC 파일 기록 |
 | 컨트롤러 서비스 | `Hive3ConnectionPool` | Hive3 JDBC 커넥션 풀 |
 | 컨트롤러 서비스 | `VendorHive3ConnectionPool` | 벤더 Hive JDBC 드라이버용 커넥션 풀 (드라이버 별도 제공) |
+
+---
+
+## `CompactHive3Table` — Hive 테이블 compaction
+
+`PutHive3Streaming`·`PutHive3QL`(INSERT)로 ACID 테이블에 자주 적재하면 파티션마다 `delta_*` 디렉토리가 쌓인다.
+`CompactHive3Table`은 HiveServer2(`hive3-dbcp-service`)로 compaction을 요청하고 끝날 때까지 추적한다.
+
+| 테이블 | 실행 | 완료 판단 |
+|---|---|---|
+| Full ACID / insert-only ACID | `ALTER TABLE db.t [PARTITION (...)] COMPACT 'major'\|'minor'` (비동기, `AND WAIT` 없음) | `SHOW COMPACTIONS`의 해당 id가 `Completion State`에 도달 |
+| Non-ACID ORC (managed) | `ALTER TABLE db.t [PARTITION (...)] CONCATENATE` (동기) | 문장이 끝나면 완료 |
+| 그 밖의 Non-ACID, external ORC | 실행하지 않음 | `failure` |
+
+### 동작
+
+1. 처음 들어온 FlowFile(`hive.compaction.id` 없음): `SHOW TBLPROPERTIES`·`DESCRIBE FORMATTED`로 테이블 종류와 파티션 컬럼을
+   판별하고, `Validate Row Count=true`면 `SET hive.compute.query.using.stats=false` 후 `COUNT(*)`를 센다.
+   요청 직전 `SHOW COMPACTIONS`의 최대 id를 기록하고 요청 뒤 새로 생긴 id를 `hive.compaction.id`에 넣는다.
+   같은 대상에 이미 대기·실행 중인 compaction이 있으면 그 id를 이어서 추적한다.
+2. 아직 진행 중(`initiated`, `working`)이면 FlowFile을 **penalize해서 `in progress`로** 보낸다.
+3. `in progress`를 **이 프로세서 자신에게 다시 연결**해 두면, Penalty Duration이 지난 뒤 다시 들어와 `SHOW COMPACTIONS`로
+   상태만 확인한다. 진행 상황이 FlowFile 속성에 있으므로 NiFi를 재시작해도 이어서 추적한다.
+4. 완료되면 사후 `COUNT(*)`를 세어 같으면 `success`, 다르면 `count mismatch`로 보낸다.
+   `failed`·`refused` 등 실패 상태, `Initiation Timeout`·`Compaction Timeout` 초과는 `failure`(이유는 `hive.compaction.error`).
+
+### 사용 예 — 전날 파티션 compaction
+
+```
+GenerateFlowFile (매일 02:00, Cron)
+  └─ UpdateAttribute  dt = ${now():toNumber():minus(86400000):format('yyyy-MM-dd')}
+       └─ CompactHive3Table ──success────────▶ (완료 로그/다음 단계)
+            │  ▲            ──count mismatch─▶ PutEmail / PutSlack (알림)
+            │  │            ──failure────────▶ PutEmail / PutSlack (알림)
+            └──┘ in progress (자기 자신으로 연결)
+```
+
+| 프로퍼티 | 값 |
+|---|---|
+| Hive 데이터베이스 연결 풀링 서비스 (`hive3-dbcp-service`) | `Hive3ConnectionPool` 또는 `VendorHive3ConnectionPool` |
+| 데이터베이스 (`Database`) | `sales` |
+| 테이블 (`Table`) | `events` |
+| 파티션 지정 (`Partition Spec`) | `dt='${dt}'` (여러 키면 `dt='${dt}',hour='03'`. 비파티션 테이블이면 비움) |
+| Compaction 종류 (`Compaction Type`) | `MAJOR` (조회 성능 우선) 또는 `MINOR` |
+| 테이블 종류 처리 (`Table Type Handling`) | `ACID_AND_NON_ACID_ORC` (기본) |
+| 행 수 검증 (`Validate Row Count`) | `true` |
+| 완료 기준 상태 (`Completion State`) | `READY_FOR_CLEANING` (기본) 또는 `SUCCEEDED` |
+| 시작 대기 타임아웃 (`Initiation Timeout`) | `30 min` |
+| Compaction 타임아웃 (`Compaction Timeout`) | `6 hours` |
+
+**Settings 탭**
+
+- **Penalty Duration = 폴링 간격.** 예: `1 min`. 진행 중인 FlowFile은 이 시간만큼 기다린 뒤 다시 상태를 확인한다.
+  짧게 잡으면 `SHOW COMPACTIONS` 호출이 잦아진다.
+- `in progress` relationship은 auto-terminate하지 말고 **자기 자신에게 연결**한다. 연결하지 않으면 추적이 끊긴다
+  (요청 자체는 Hive에 남는다).
+
+### 운영 주의
+
+- 적재가 끝난 파티션(보통 D-1 이전)만 대상으로 한다. `CONCATENATE`는 배타 lock을 잡는다.
+- `ready for cleaning`은 새 base/delta가 커밋돼 조회가 이미 새 파일을 쓰는 상태다. 옛 디렉토리는 Metastore의 Cleaner가
+  열린 트랜잭션이 끝난 뒤 지운다. 디스크 정리까지 기다리려면 `Completion State=SUCCEEDED`를 쓴다.
+- 요청이 `initiated`에 머물면 Hive 서버의 `hive.compactor.initiator.on=true`, `hive.compactor.worker.threads>0` 설정과
+  Worker 큐 적체를 확인한다(서버 설정은 이 프로세서가 바꾸지 않는다).
+- 자동 compaction(Initiator)과 겹칠 수 있다. 수동으로만 관리할 테이블에는 `TBLPROPERTIES ('no_auto_compaction'='true')`를 권장한다.
+- 파티션 테이블은 모든 파티션 키를 지정해야 한다(테이블 전체를 한 번에 compaction하지 않는다).
+- Hive 4는 Non-ACID managed 테이블을 기본적으로 EXTERNAL로 바꿔 만든다. external 테이블은 `CONCATENATE`를 할 수 없어 `failure`로 보낸다.
+- Hive 4는 delta가 하나뿐인 경우처럼 compaction 임계값에 못 미치면 요청을 `refused`로 끝낸다(`failure`, 이유에 Hive 메시지 포함).
+
+### 출력 속성
+
+`hive.compaction.id`, `hive.compaction.type`(MAJOR/MINOR/CONCATENATE), `hive.compaction.state`, `hive.compaction.requested.at`(epoch ms),
+`hive.compaction.duration.ms`, `hive.compaction.rowcount.before`, `hive.compaction.rowcount.after`, `hive.compaction.table`(db.table),
+`hive.compaction.partition`, `hive.compaction.error`.
+
+검증한 서버: Apache Hive 3.1.3, 4.0.1 (공식 `apache/hive` Docker 이미지, Apache `hive-jdbc` 드라이버).
 
 ---
 
