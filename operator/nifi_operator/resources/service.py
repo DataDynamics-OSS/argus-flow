@@ -8,7 +8,14 @@ UI Service: NiFi 웹 UI 외부 접근용
 from kubernetes import client
 
 
-def build_headless_service(name: str, namespace: str) -> client.V1Service:
+def _web_port(spec: dict) -> tuple:
+    """(포트 이름, 포트 번호) — TLS면 https/8443, 아니면 http/8080 (configmap.py와 일치)."""
+    if (spec or {}).get("tls", {}).get("enabled", False):
+        return "https", 8443
+    return "http", 8080
+
+
+def build_headless_service(name: str, namespace: str, spec: dict = None) -> client.V1Service:
     """NiFi 노드 디스커버리를 위한 Headless Service를 생성합니다.
 
     Headless Service (ClusterIP: None)는 각 Pod에 대해
@@ -26,6 +33,7 @@ def build_headless_service(name: str, namespace: str) -> client.V1Service:
     Returns:
         V1Service 객체
     """
+    web_name, web_port = _web_port(spec)
     return client.V1Service(
         metadata=client.V1ObjectMeta(
             name=f"{name}-headless",
@@ -40,8 +48,8 @@ def build_headless_service(name: str, namespace: str) -> client.V1Service:
             cluster_ip="None",  # Headless Service
             selector={"app": "nifi", "cluster": name},
             ports=[
-                # NiFi 웹 UI (HTTPS)
-                client.V1ServicePort(name="https", port=8443, target_port=8443),
+                # NiFi 웹 UI/REST (TLS: https 8443, 비-TLS: http 8080)
+                client.V1ServicePort(name=web_name, port=web_port, target_port=web_port),
                 # 클러스터 노드 간 통신 프로토콜
                 client.V1ServicePort(name="cluster", port=11443, target_port=11443),
                 # FlowFile 로드 밸런싱
@@ -66,6 +74,7 @@ def build_ui_service(name: str, namespace: str, spec: dict) -> client.V1Service:
     Returns:
         V1Service 객체
     """
+    web_name, web_port = _web_port(spec)
     return client.V1Service(
         metadata=client.V1ObjectMeta(
             name=f"{name}-ui",
@@ -80,8 +89,8 @@ def build_ui_service(name: str, namespace: str, spec: dict) -> client.V1Service:
             type="ClusterIP",
             selector={"app": "nifi", "cluster": name},
             ports=[
-                # NiFi 웹 UI (HTTPS)
-                client.V1ServicePort(name="https", port=8443, target_port=8443),
+                # NiFi 웹 UI (TLS: https 8443, 비-TLS: http 8080)
+                client.V1ServicePort(name=web_name, port=web_port, target_port=web_port),
             ],
         ),
     )

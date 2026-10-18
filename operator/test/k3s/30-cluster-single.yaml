@@ -1,0 +1,17 @@
+# S2/S3: 단일 노드 비-TLS
+apiVersion: datadynamics.io/v1alpha1
+kind: NiFiCluster
+metadata:
+  name: single
+  namespace: nifi-optest
+spec:
+  replicas: 1
+  version: "2.10.0"
+  resources:
+    requests: { cpu: "500m", memory: "2Gi" }
+    limits: { cpu: "4", memory: "4Gi" }
+  storage:
+    size: "5Gi"
+    storageClassName: local-path
+  config:
+    jvmHeapSize: "1g"

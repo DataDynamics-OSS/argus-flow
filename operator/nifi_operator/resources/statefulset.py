@@ -6,14 +6,23 @@ StatefulSet은 각 NiFi 노드에 안정적인 DNS(Pod FQDN)와 전용 PVC를 �
 설정은 init 컨테이너가 **공식 NiFi 이미지의 기본 conf 위에 override를 병합**하여
 생성한다(configmap.py의 merge-config.sh 참조). 이렇게 하면 nifi.properties의 필수
 기본값을 유지하면서 클러스터/보안 관련 키만 덮어쓸 수 있다.
+
+메인 컨테이너는 이미지 ENTRYPOINT(start.sh) 대신 configmap.py의 start-nifi.sh로
+``nifi.sh run``을 직접 실행한다(start.sh는 병합된 nifi.properties를 다시 덮어씀).
 """
+
+import hashlib
+import json
 
 from kubernetes import client
 
+from nifi_operator.resources.configmap import build_nifi_config
 from nifi_operator.resources.rbac import node_service_account_name
 
 # TLS 인증서 Secret 마운트 경로 (configmap.py의 TLS_MOUNT과 일치해야 함)
 TLS_MOUNT = "/opt/nifi/tls"
+# PVC 마운트 경로 (configmap.py의 DATA_DIR과 일치해야 함)
+DATA_MOUNT = "/opt/nifi/nifi-current/data"
 NIFI_UID = 1000
 
 
@@ -41,6 +50,18 @@ def _secret_env(env_name: str, secret_name: str, key: str) -> client.V1EnvVar:
             secret_key_ref=client.V1SecretKeySelector(name=secret_name, key=key)
         ),
     )
+
+
+CONFIG_HASH_ANNOTATION = "nifi-operator/config-hash"
+
+
+def config_hash(name: str, namespace: str, spec: dict) -> str:
+    """ConfigMap 내용의 해시. Pod 템플릿 어노테이션으로 넣어 설정이 바뀌면 롤링 재시작되게 한다.
+
+    타임스탬프 대신 내용 해시를 쓰므로 같은 설정으로 재적용/재시도해도 재시작되지 않는다.
+    """
+    data = build_nifi_config(name, namespace, spec).data
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()[:16]
 
 
 def build_statefulset(name: str, namespace: str, spec: dict) -> client.V1StatefulSet:
@@ -75,6 +96,11 @@ def build_statefulset(name: str, namespace: str, spec: dict) -> client.V1Statefu
         _pod_field_env("NIFI_POD_NAME", "metadata.name"),
         _pod_field_env("NIFI_POD_NAMESPACE", "metadata.namespace"),
         client.V1EnvVar(name="HEADLESS_SERVICE", value=headless),
+        # KubernetesConfigMapStateProvider가 만드는 상태 ConfigMap 이름 접두어(클러스터 구분/정리용).
+        # NiFi가 "-"를 붙이므로 이름은 "{name}-nifi-component-<컴포넌트 ID>"가 된다.
+        client.V1EnvVar(name="STATE_CONFIGMAP_PREFIX", value=name),
+        client.V1EnvVar(name="NIFI_JVM_HEAP_INIT", value=config.get("jvmHeapSize", "1g")),
+        client.V1EnvVar(name="NIFI_JVM_HEAP_MAX", value=config.get("jvmHeapSize", "1g")),
         _secret_env("SENSITIVE_PROPS_KEY", secret_name, "sensitive-props-key"),
     ]
     if tls_enabled:
@@ -92,6 +118,8 @@ def build_statefulset(name: str, namespace: str, spec: dict) -> client.V1Statefu
             client.V1VolumeMount(name="overrides", mount_path="/overrides"),
             client.V1VolumeMount(name="scripts", mount_path="/scripts"),
             client.V1VolumeMount(name="config-rendered", mount_path="/work-conf"),
+            # PVC 아래 영속 디렉터리(data/conf, data/flow, data/state) 준비용
+            client.V1VolumeMount(name="data", mount_path=DATA_MOUNT),
         ],
     )
 
@@ -105,7 +133,8 @@ def build_statefulset(name: str, namespace: str, spec: dict) -> client.V1Statefu
     ]
 
     volume_mounts = [
-        client.V1VolumeMount(name="data", mount_path="/opt/nifi/nifi-current/data"),
+        client.V1VolumeMount(name="data", mount_path=DATA_MOUNT),
+        client.V1VolumeMount(name="scripts", mount_path="/scripts", read_only=True),
         # 병합된 conf 디렉터리 전체를 덮어쓴다 (개별 subPath 아님 → 필수 파일 보존)
         client.V1VolumeMount(
             name="config-rendered", mount_path="/opt/nifi/nifi-current/conf"
@@ -123,11 +152,9 @@ def build_statefulset(name: str, namespace: str, spec: dict) -> client.V1Statefu
     container = client.V1Container(
         name="nifi",
         image=image_ref,
+        # 이미지 ENTRYPOINT(start.sh)를 쓰지 않는다 — configmap.py START_SCRIPT 참조
+        command=["sh", "/scripts/start-nifi.sh"],
         ports=ports,
-        env=[
-            client.V1EnvVar(name="NIFI_JVM_HEAP_INIT", value=config.get("jvmHeapSize", "1g")),
-            client.V1EnvVar(name="NIFI_JVM_HEAP_MAX", value=config.get("jvmHeapSize", "1g")),
-        ],
         resources=client.V1ResourceRequirements(
             requests={
                 "cpu": resources_spec.get("requests", {}).get("cpu", "1"),
@@ -169,7 +196,10 @@ def build_statefulset(name: str, namespace: str, spec: dict) -> client.V1Statefu
             name="scripts",
             config_map=client.V1ConfigMapVolumeSource(
                 name=f"{name}-config",
-                items=[client.V1KeyToPath(key="merge-config.sh", path="merge-config.sh")],
+                items=[
+                    client.V1KeyToPath(key="merge-config.sh", path="merge-config.sh"),
+                    client.V1KeyToPath(key="start-nifi.sh", path="start-nifi.sh"),
+                ],
             ),
         ),
         client.V1Volume(
@@ -226,8 +256,16 @@ def build_statefulset(name: str, namespace: str, spec: dict) -> client.V1Statefu
             selector=client.V1LabelSelector(
                 match_labels={"app": "nifi", "cluster": name}
             ),
+            # 롤링 재시작은 오퍼레이터가 partition을 한 단계씩 낮추며 제어한다(main.py)
+            update_strategy=client.V1StatefulSetUpdateStrategy(
+                type="RollingUpdate",
+                rolling_update=client.V1RollingUpdateStatefulSetStrategy(partition=0),
+            ),
             template=client.V1PodTemplateSpec(
-                metadata=client.V1ObjectMeta(labels=labels),
+                metadata=client.V1ObjectMeta(
+                    labels=labels,
+                    annotations={CONFIG_HASH_ANNOTATION: config_hash(name, namespace, spec)},
+                ),
                 spec=client.V1PodSpec(
                     service_account_name=node_service_account_name(name),
                     security_context=client.V1PodSecurityContext(
@@ -240,7 +278,8 @@ def build_statefulset(name: str, namespace: str, spec: dict) -> client.V1Statefu
                     init_containers=[init_container],
                     containers=[container],
                     volumes=volumes,
-                    termination_grace_period_seconds=60,
+                    # nifi.sh stop(graceful shutdown 기본 20초)이 끝날 시간을 보장
+                    termination_grace_period_seconds=120,
                 ),
             ),
             volume_claim_templates=[pvc_template],

@@ -1,4 +1,10 @@
 # NiFi 2.x Cluster with TLS — 3 nodes, cert-manager integration
+#
+# issuerRef는 *.<name>-headless.<ns>.svc.cluster.local 와일드카드 SAN과 client auth 인증서를
+# 발급할 수 있는 사설 CA Issuer/ClusterIssuer여야 한다(공개 ACME는 불가). 예: cert-manager
+# SelfSigned → CA Certificate → CA ClusterIssuer 체인.
+# 인증은 클라이언트 인증서(mTLS)만 지원한다 — Initial Admin은 오퍼레이터 인증서
+# (CN=<name>-operator, Secret <name>-operator-tls) 또는 tls.initialAdminIdentity.
 apiVersion: datadynamics.io/v1alpha1
 kind: NiFiCluster
 metadata:
@@ -6,7 +12,7 @@ metadata:
   namespace: nifi
 spec:
   replicas: 3
-  version: "2.4.0"
+  version: "2.10.0"
   image: "apache/nifi"
   resources:
     requests:
@@ -17,22 +23,14 @@ spec:
       memory: "8Gi"
   storage:
     size: "50Gi"
-    storageClassName: "standard"
   config:
     jvmHeapSize: "3g"
     maxThreads: 20
     sensitivePropsKey: "my-production-secret-key"
+    # 외부 프록시/Ingress 호스트 (Host 헤더 검증 허용 목록, 쉼표 구분)
     webProxyHost: "nifi.example.com"
   tls:
     enabled: true
     issuerRef:
-      name: letsencrypt-prod
+      name: internal-ca
       kind: ClusterIssuer
-  auth:
-    type: ldap
-    ldap:
-      url: "ldaps://ldap.example.com:636"
-      searchBase: "ou=users,dc=example,dc=com"
-      searchFilter: "(uid={0})"
-      managerDn: "cn=admin,dc=example,dc=com"
-      managerPasswordSecretRef: "nifi-ldap-password"

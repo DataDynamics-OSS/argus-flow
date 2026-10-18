@@ -46,6 +46,14 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
+  # kopf: 시작 시 리소스 디스커버리(CRD 목록)와 --namespace 패턴 매칭(네임스페이스 목록)을
+  # 클러스터 범위로 조회한다. 없으면 403으로 기동이 진행되지 않는다.
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
   # kopf requires access to cluster-wide resources for peering
   - apiGroups: ["kopf.dev"]
     resources: ["clusterkopfpeerings"]

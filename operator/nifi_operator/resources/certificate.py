@@ -45,22 +45,20 @@ def _issuer_ref(spec: dict) -> dict:
 def build_server_certificate(name: str, namespace: str, spec: dict) -> dict:
     """모든 NiFi 노드가 공유하는 서버 인증서(PKCS12).
 
-    SAN에 전체 노드 FQDN과 서비스 이름을 포함하여, 어느 Pod가 이 인증서를 제시해도
-    호스트명 검증을 통과하도록 한다.
-    """
-    replicas = spec.get("replicas", 1)
-    headless = f"{name}-headless"
+    SAN에 headless Service 아래 와일드카드(``*.{headless}.{ns}.svc.cluster.local``)와
+    서비스 이름을 넣어, 어느 Pod가 이 인증서를 제시해도 호스트명 검증을 통과하게 한다.
+    와일드카드를 쓰므로 SAN이 노드 수와 무관하다 — 스케일 업 시 인증서 재발급/기존 노드
+    재시작이 필요 없다. (사용하는 Issuer가 와일드카드 DNS SAN을 발급할 수 있어야 한다:
+    CA/Vault/SelfSigned Issuer 등 사설 PKI. 공개 ACME는 .svc.cluster.local 자체를 발급 불가.)
 
-    dns_names: list[str] = []
-    for i in range(replicas):
-        fqdn = f"{name}-nifi-{i}.{headless}.{namespace}.svc.cluster.local"
-        dns_names += [
-            fqdn,
-            f"{name}-nifi-{i}.{headless}.{namespace}.svc",
-            f"{name}-nifi-{i}.{headless}",
-        ]
-    # 서비스 이름들도 포함 (UI 접근)
-    dns_names += [
+    commonName은 노드 identity(configmap.node_identity)와 일치해야 한다.
+    """
+    headless = f"{name}-headless"
+    dns_names: list[str] = [
+        f"*.{headless}.{namespace}.svc.cluster.local",
+        f"*.{headless}.{namespace}.svc",
+        f"*.{headless}",
+        # 서비스 이름들 (UI 접근)
         f"{name}-ui.{namespace}.svc.cluster.local",
         f"{name}-ui",
         headless,

@@ -1,0 +1,22 @@
+# S9: 버전 업그레이드 (2.6.0 → 2.10.0) 3노드 TLS
+apiVersion: datadynamics.io/v1alpha1
+kind: NiFiCluster
+metadata:
+  name: upg
+  namespace: nifi-optest
+spec:
+  replicas: 3
+  version: "2.6.0"
+  resources:
+    requests: { cpu: "500m", memory: "2Gi" }
+    limits: { cpu: "4", memory: "4Gi" }
+  storage:
+    size: "5Gi"
+    storageClassName: local-path
+  config:
+    jvmHeapSize: "1g"
+  tls:
+    enabled: true
+    issuerRef:
+      name: optest-ca
+      kind: Issuer

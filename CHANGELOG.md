@@ -117,6 +117,28 @@
   `MVNW_REPOURL` 환경변수를 사용.
 
 ### Fixed
+- **NiFi 2.x 오퍼레이터** (`operator/`) — k3s 실클러스터 통합 테스트로 확인한 결함 수정.
+  - 기동: 오퍼레이터 이미지가 uid 1000의 passwd 항목이 없어 kopf가 기동 직후 죽던 문제, kopf가 요구하는
+    CRD/네임스페이스 조회 권한이 ClusterRole에 없던 문제, init 컨테이너의 `cp -a`가 emptyDir에서 실패해
+    NiFi Pod가 한 번도 뜨지 못하던 문제.
+  - 설정: 이미지 `start.sh`가 병합된 nifi.properties를 덮어써(`cluster.is.node=false`, Curator 리더 선출,
+    zk state provider, http+https 동시 지정 등) 클러스터가 구성되지 않던 문제 — `nifi.sh run`을 직접 실행.
+    비-TLS에서 기본 keystore 경로 때문에 기동 실패, UI/headless Service가 비-TLS에서도 8443만 노출하던 문제,
+    TLS에서 Jetty가 Pod IP에만 바인딩되어 `kubectl port-forward`가 안 되던 문제.
+  - TLS 인가: `single-user-authorizer`가 그대로라 TLS 클러스터가 기동하지 못하던 문제, authorizers.xml이
+    `Node Identity`를 사용자로 시드하지 않고 실제 인증서 DN과도 달라 노드 정책 시드가 실패하던 문제,
+    Initial Admin(오퍼레이터)에게 root Process Group 정책이 없어 Flow를 만들 수 없던 문제.
+  - 영속성: flow·FlowFile/Content/Provenance/DB 리포지토리·로컬 state·users/authorizations가 emptyDir에 있어
+    Pod 재시작마다 사라지던 문제 — 모두 PVC로 이동.
+  - 스케일링: Offload를 Disconnect 전에 요청해 항상 409로 실패하고도 Pod를 줄여 데이터가 유실될 수 있던 문제
+    (Disconnect → Offload → Delete 순서, 실패 시 중단·재시도), 실제 응답 필드(`nodeId`)와 달라 노드 ID 조회가
+    KeyError로 실패하던 문제, PDB가 replicas 변경을 따라가지 않던 문제.
+  - 운영: 자동 복구가 관리자가 끊은 노드/축소 대상까지 재연결하던 문제, `Degraded` phase가 CRD enum에 없어
+    status 갱신이 거부되던 문제, version/image/resources 변경이 무시되던 문제(노드 단위 롤링 재시작으로 반영),
+    롤링 재시작이 노드 재조인을 기다리지 않아 전체 노드가 동시에 이탈하던 문제, TLS 클라이언트 인증서가 없을 때
+    검증 없는 TLS로 대체하던 문제, CR 삭제 시 TLS Secret/Lease/state ConfigMap이 남던 문제.
+  - NiFiFlow: Registry 클라이언트를 임의(첫 번째)로 고르던 문제, 재시도 시 Process Group이 중복 생성될 수 있던
+    문제, 버전 변경 완료를 기다리지 않던 문제, 삭제 시 중지만 하고 Process Group을 지우지 않던 문제.
 - `ExecuteFastSQL`: Fetch Size 경계마다 한 행씩 빠지던 문제, 기본값(Fetch Size 0)에서 결과가 0건이던 문제,
   여러 스레드가 ProcessSession을 동시에 사용하던 문제.
 - `BulkOracleInsertProcessor`: 입력 연결을 받을 수 없게 선언되어 동작하지 않던 문제, 생성 SQL 끝의 `;` 때문에

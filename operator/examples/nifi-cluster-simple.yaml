@@ -1,12 +1,13 @@
-# Simple NiFi 2.x Cluster — 3 nodes, no TLS, single-user auth
+# Simple NiFi 2.x — 단일 노드, TLS 없음(HTTP 8080, 인증 없음 — 개발/테스트 전용)
+# 멀티노드(replicas>1)는 tls.enabled=true가 필요하다 (nifi-cluster-tls.yaml 참조).
 apiVersion: datadynamics.io/v1alpha1
 kind: NiFiCluster
 metadata:
   name: my-nifi
   namespace: nifi
 spec:
-  replicas: 3
-  version: "2.4.0"
+  replicas: 1
+  version: "2.10.0"
   image: "apache/nifi"
   resources:
     requests:
@@ -17,10 +18,7 @@ spec:
       memory: "4Gi"
   storage:
     size: "20Gi"
-    storageClassName: "standard"
+    # storageClassName 생략 시 클러스터 기본 StorageClass 사용
   config:
     jvmHeapSize: "1536m"
     maxThreads: 15
-    sensitivePropsKey: "change-me-to-a-real-key"
-  auth:
-    type: single-user

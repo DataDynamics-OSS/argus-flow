@@ -1,0 +1,30 @@
+# 테스트용 사설 CA 체인: SelfSigned Issuer → CA Certificate → CA Issuer (모두 nifi-optest 네임스페이스)
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned
+  namespace: nifi-optest
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: optest-ca
+  namespace: nifi-optest
+spec:
+  isCA: true
+  commonName: nifi-optest-ca
+  secretName: optest-ca
+  duration: 8760h
+  privateKey: { algorithm: RSA, size: 2048 }
+  issuerRef: { name: selfsigned, kind: Issuer }
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: optest-ca
+  namespace: nifi-optest
+spec:
+  ca:
+    secretName: optest-ca

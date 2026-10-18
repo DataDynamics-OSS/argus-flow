@@ -47,25 +47,61 @@ def sample_cluster_info():
         "cluster": {
             "nodes": [
                 {
-                    "nodeIdentifier": {"id": "node-1-id"},
+                    "nodeId": "node-1-id",
                     "address": "test-nifi-0.test-headless.default.svc.cluster.local",
                     "apiPort": 8443,
                     "status": "CONNECTED",
                     "roles": ["Cluster Coordinator", "Primary Node"],
                 },
                 {
-                    "nodeIdentifier": {"id": "node-2-id"},
+                    "nodeId": "node-2-id",
                     "address": "test-nifi-1.test-headless.default.svc.cluster.local",
                     "apiPort": 8443,
                     "status": "CONNECTED",
                     "roles": [],
                 },
                 {
-                    "nodeIdentifier": {"id": "node-3-id"},
+                    "nodeId": "node-3-id",
                     "address": "test-nifi-2.test-headless.default.svc.cluster.local",
                     "apiPort": 8443,
                     "status": "CONNECTED",
                     "roles": [],
+                },
+            ]
+        }
+    }
+
+
+@pytest.fixture
+def user_disconnected_cluster_info():
+    """관리자가 직접 연결 해제한 노드(nifi-1)가 있는 클러스터 정보 (NiFi 2.10 실제 이벤트 문구)."""
+    return {
+        "cluster": {
+            "nodes": [
+                {
+                    "nodeId": "node-1-id",
+                    "address": "test-nifi-0.test-headless.default.svc.cluster.local",
+                    "status": "CONNECTED",
+                    "roles": ["Cluster Coordinator", "Primary Node"],
+                },
+                {
+                    "nodeId": "node-2-id",
+                    "address": "test-nifi-1.test-headless.default.svc.cluster.local",
+                    "status": "DISCONNECTED",
+                    "roles": [],
+                    "events": [
+                        {
+                            "timestamp": "10/18/2026 11:53:45 UTC",
+                            "category": "INFO",
+                            "message": "Node disconnected due to User CN=test-operator "
+                                       "requested that node be disconnected from cluster",
+                        },
+                        {
+                            "timestamp": "10/18/2026 11:40:00 UTC",
+                            "category": "INFO",
+                            "message": "Received first heartbeat from connecting node. Node connected.",
+                        },
+                    ],
                 },
             ]
         }
@@ -79,14 +115,14 @@ def disconnected_cluster_info():
         "cluster": {
             "nodes": [
                 {
-                    "nodeIdentifier": {"id": "node-1-id"},
+                    "nodeId": "node-1-id",
                     "address": "test-nifi-0.test-headless.default.svc.cluster.local",
                     "apiPort": 8443,
                     "status": "CONNECTED",
                     "roles": ["Cluster Coordinator", "Primary Node"],
                 },
                 {
-                    "nodeIdentifier": {"id": "node-2-id"},
+                    "nodeId": "node-2-id",
                     "address": "test-nifi-1.test-headless.default.svc.cluster.local",
                     "apiPort": 8443,
                     "status": "DISCONNECTED",

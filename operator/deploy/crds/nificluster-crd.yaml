@@ -146,10 +146,12 @@ spec:
                           type: string
             status:
               type: object
+              # kopf가 핸들러 진행 상태/결과를 status 아래에 기록하므로 미정의 필드를 보존한다
+              x-kubernetes-preserve-unknown-fields: true
               properties:
                 phase:
                   type: string
-                  enum: ["Creating", "Running", "Scaling", "Updating", "Error"]
+                  enum: ["Creating", "Running", "Scaling", "Updating", "Degraded", "Error"]
                 readyNodes:
                   type: integer
                 totalNodes:
@@ -160,6 +162,13 @@ spec:
                   type: string
                 version:
                   type: string
+                rootPoliciesApplied:
+                  type: boolean
+                  description: "Root process group policies granted to the admin/node identities (TLS)"
+                applied:
+                  type: object
+                  description: "Values of immutable spec fields (storage, tls) applied at creation"
+                  x-kubernetes-preserve-unknown-fields: true
       subresources:
         status: {}
       additionalPrinterColumns:

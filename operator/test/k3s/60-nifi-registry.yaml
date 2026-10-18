@@ -1,0 +1,37 @@
+# S11: NiFiFlow 테스트용 NiFi Registry (비보안 HTTP, 영속성 없음 — 테스트 전용)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nifi-registry
+  namespace: nifi-optest
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: nifi-registry }
+  template:
+    metadata:
+      labels: { app: nifi-registry }
+    spec:
+      containers:
+        - name: registry
+          image: apache/nifi-registry:2.4.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 18080
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { cpu: "2", memory: 1Gi }
+          readinessProbe:
+            httpGet: { path: /nifi-registry-api/buckets, port: 18080 }
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nifi-registry
+  namespace: nifi-optest
+spec:
+  selector: { app: nifi-registry }
+  ports:
+    - port: 18080
+      targetPort: 18080

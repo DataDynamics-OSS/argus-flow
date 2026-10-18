@@ -49,6 +49,8 @@ spec:
                   description: "Auto-start the flow after deployment"
             status:
               type: object
+              # kopf가 핸들러 진행 상태/결과를 status 아래에 기록하므로 미정의 필드를 보존한다
+              x-kubernetes-preserve-unknown-fields: true
               properties:
                 phase:
                   type: string

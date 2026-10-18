@@ -1,0 +1,14 @@
+# S11: NiFiFlow — bucketId/flowId는 `nifi_api.py secure 1 regsetup` 출력값으로 치환
+apiVersion: datadynamics.io/v1alpha1
+kind: NiFiFlow
+metadata:
+  name: optest-flow
+  namespace: nifi-optest
+spec:
+  clusterRef: secure
+  registryUrl: "http://nifi-registry.nifi-optest.svc.cluster.local:18080"
+  bucketId: "@BUCKET@"
+  flowId: "@FLOW@"
+  flowVersion: 1
+  processGroupId: "root"
+  autoStart: true
