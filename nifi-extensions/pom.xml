@@ -28,13 +28,18 @@
 
     <groupId>io.datadynamics.nifi</groupId>
     <artifactId>nifi-argus-extensions</artifactId>
-    <version>2.10.0-1</version>
+    <version>0.5.1</version>
     <packaging>pom</packaging>
 
     <name>Argus Flow :: NiFi Extensions</name>
 
     <properties>
+        <!-- 기반 Apache NiFi 버전. 제품 버전(project.version)과 따로 관리한다 -->
         <nifi.version>2.10.0</nifi.version>
+        <!-- 재현 가능한 빌드: jar·NAR·assembly 항목의 타임스탬프 고정.
+             scripts/set-version.sh 가 갱신하고, 릴리스 빌드는 태그 커밋 시각으로 덮어쓴다
+             (-Dproject.build.outputTimestamp=...). -->
+        <project.build.outputTimestamp>2026-10-19T00:08:12Z</project.build.outputTimestamp>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>

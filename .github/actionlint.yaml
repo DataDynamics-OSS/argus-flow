@@ -1,0 +1,4 @@
+# actionlint 설정 — release.yml 이 쓰는 self-hosted 러너의 사용자 정의 라벨
+self-hosted-runner:
+  labels:
+    - argus-flow-release

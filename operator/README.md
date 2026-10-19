@@ -103,17 +103,21 @@ NiFi는 Host 헤더를 검사한다. 로컬 포트를 8443이 아닌 값으로 �
 
 ## 프로덕션 배포
 
-### Docker 이미지 빌드 및 Push
+### Docker 이미지
+
+릴리스 이미지는 Docker Hub의 공개 이미지 `datadynamics/argus-flow-operator:0.5.1`이다
+(`deploy/operator-deployment.yaml`과 Helm 차트의 기본값). 단계별 설치 절차는 [INSTALL.md](INSTALL.md)를 본다.
+소스를 고쳐 직접 빌드·push할 때만 다음을 쓴다.
 
 ```bash
-make build IMAGE_NAME=your-registry/nifi-operator IMAGE_TAG=v0.1.0
-make push IMAGE_NAME=your-registry/nifi-operator IMAGE_TAG=v0.1.0
+make build IMAGE_NAME=your-registry/argus-flow-operator IMAGE_TAG=<태그>
+make push IMAGE_NAME=your-registry/argus-flow-operator IMAGE_TAG=<태그>
 ```
 
 ### 클러스터에 Operator 배포
 
 ```bash
-# deploy/operator-deployment.yaml의 이미지를 수정한 뒤
+# 직접 빌드한 이미지를 쓰면 deploy/operator-deployment.yaml의 이미지를 수정한 뒤
 kubectl create namespace nifi-operator-system
 kubectl apply -f deploy/rbac.yaml
 kubectl apply -f deploy/operator-deployment.yaml

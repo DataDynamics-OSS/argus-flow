@@ -6,6 +6,25 @@ RUN pip install --no-cache-dir --target=/app/deps -r requirements.txt
 
 FROM python:3.12-slim
 
+# 이미지 이름: datadynamics/argus-flow-operator. 버전·커밋은 빌드 인자로 받는다
+# (scripts/build-release.sh, .github/workflows/release.yml).
+ARG VERSION=0.0.0-dev
+ARG REVISION=unknown
+ARG SOURCE=https://github.com/DataDynamics-OSS/argus-flow
+ARG CREATED=1970-01-01T00:00:00Z
+# operator 가 기본으로 다루는 NiFi 버전(루트 pom 의 nifi.version). 표시용 라벨이다.
+ARG NIFI_VERSION=unknown
+
+LABEL org.opencontainers.image.title="Argus Flow NiFi Operator" \
+      org.opencontainers.image.description="Kubernetes operator for Apache NiFi 2.x clusters (Argus Flow)" \
+      org.opencontainers.image.vendor="Data Dynamics Inc." \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.source="${SOURCE}" \
+      org.opencontainers.image.created="${CREATED}" \
+      io.datadynamics.nifi.version="${NIFI_VERSION}"
+
 WORKDIR /app
 
 COPY --from=builder /app/deps /app/deps

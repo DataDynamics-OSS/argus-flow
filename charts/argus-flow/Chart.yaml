@@ -2,5 +2,9 @@ apiVersion: v2
 name: argus-flow
 description: Argus Flow NiFi 2.x Kubernetes operator (CRDs, RBAC, operator deployment)
 type: application
-version: 0.1.0
-appVersion: "2.10.0"
+# 차트·operator 이미지·Argus NAR 이 같은 제품 버전을 쓴다 (scripts/set-version.sh 로만 변경)
+version: 0.5.1
+appVersion: "0.5.1"
+annotations:
+  # 기반 Apache NiFi 버전 (제품 버전과 별개, 루트 pom 의 nifi.version)
+  argus-flow.datadynamics.io/nifi-version: "2.10.0"

@@ -21,7 +21,7 @@
     <parent>
         <groupId>io.datadynamics.nifi</groupId>
         <artifactId>argus-flow</artifactId>
-        <version>2.10.0-1</version>
+        <version>0.5.1</version>
     </parent>
 
     <artifactId>argus-flow-distribution</artifactId>
@@ -29,6 +29,16 @@
 
     <name>Argus Flow :: Distribution</name>
     <description>Repackages the official NiFi binary with Argus NARs and conf overlay (tar.gz); RPM via nfpm</description>
+
+    <properties>
+        <!-- 릴리스 산출물 이름. 제품 버전과 기반 NiFi 버전을 함께 드러낸다
+             (예: argus-flow-0.5.0-nifi-2.10.0-bin.tar.gz). tar.gz 의 최상위 디렉터리도 이 이름이다 -->
+        <argus.dist.name>argus-flow-${project.version}-nifi-${nifi.version}</argus.dist.name>
+        <!-- 업스트림 바이너리 nifi-${nifi.version}-bin.zip 의 SHA-512.
+             정본: https://archive.apache.org/dist/nifi/${nifi.version}/nifi-${nifi.version}-bin.zip.sha512
+             nifi.version 을 올리면 이 값도 반드시 함께 바꾼다(불일치 시 다운로드 단계에서 빌드 실패) -->
+        <nifi.binary.sha512>a56c93cad6794beceeaa2e398a2ee9721160acdd16e479050c57879a661024113360c5d5778bcc379c76e6485805869e24cdb534bcf8cb30c6956d09377169d7</nifi.binary.sha512>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -304,6 +314,8 @@
                                 </goals>
                                 <configuration>
                                     <url>https://archive.apache.org/dist/nifi/${nifi.version}/nifi-${nifi.version}-bin.zip</url>
+                                    <!-- 공식 SHA-512 로 검증. 캐시(~/.m2/repository/.cache)에 있는 파일도 다시 검증한다 -->
+                                    <sha512>${nifi.binary.sha512}</sha512>
                                     <unpack>true</unpack>
                                     <outputDirectory>${project.build.directory}/upstream</outputDirectory>
                                 </configuration>
@@ -324,9 +336,40 @@
                                     <descriptors>
                                         <descriptor>src/main/assembly/dist.xml</descriptor>
                                     </descriptors>
-                                    <finalName>argus-flow-nifi-${project.version}</finalName>
+                                    <finalName>${argus.dist.name}-bin</finalName>
                                     <appendAssemblyId>false</appendAssemblyId>
                                     <tarLongFileMode>posix</tarLongFileMode>
+                                </configuration>
+                            </execution>
+                            <!-- 이미 운영 중인 NiFi ${nifi.version} 에 확장만 추가하는 사용자용:
+                                 target/nars 의 NAR 전부를 평탄한 zip 으로 (nar_extensions/ 에 그대로 풀면 됨) -->
+                            <execution>
+                                <id>assemble-nars-zip</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>single</goal>
+                                </goals>
+                                <configuration>
+                                    <descriptors>
+                                        <descriptor>src/main/assembly/nars.xml</descriptor>
+                                    </descriptors>
+                                    <finalName>argus-flow-nars-${project.version}</finalName>
+                                    <appendAssemblyId>false</appendAssemblyId>
+                                </configuration>
+                            </execution>
+                            <!-- DB 인증·인가 스키마 DDL (DBA 가 직접 적용하는 환경용) -->
+                            <execution>
+                                <id>assemble-db-iaa-sql-zip</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>single</goal>
+                                </goals>
+                                <configuration>
+                                    <descriptors>
+                                        <descriptor>src/main/assembly/db-iaa-sql.xml</descriptor>
+                                    </descriptors>
+                                    <finalName>argus-flow-db-iaa-sql-${project.version}</finalName>
+                                    <appendAssemblyId>false</appendAssemblyId>
                                 </configuration>
                             </execution>
                         </executions>

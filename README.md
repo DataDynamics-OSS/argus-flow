@@ -49,9 +49,11 @@ Argus Flow는 Apache NiFi 2을 실제 운영 환경에 올리는 데 필요한 �
 make extensions      # 확장 NAR 빌드 (= mvn -B package)
 make dist            # NiFi 재패키징 tar.gz (upstream 바이너리 다운로드 포함)
 make rpm             # RPM (nfpm 필요)
-make docker-image    # NAR 포함 NiFi 이미지
+make docker-image    # NAR 포함 NiFi 이미지 (datadynamics/argus-flow-nifi:<버전>)
+make operator-image  # 오퍼레이터 이미지 (datadynamics/argus-flow-operator:<버전>)
 make operator-test   # 오퍼레이터 단위 테스트
 make nifi-config-test  # conf 설정 CLI 단위 테스트
+make release-artifacts # 릴리스 첨부 파일 전부 → distribution/target/release/ (scripts/build-release.sh)
 ```
 
 `conf/` 설정 CLI는 대화형으로도 실행할 수 있습니다. 설치 루트나 `conf` 디렉터리 중 편한
@@ -66,6 +68,29 @@ make nifi-config NIFI_HOME=/opt/nifi     # 또는 CONF=/opt/nifi/conf
 필요합니다. Maven은 시스템에 설치된 것 대신 동봉된 wrapper(`./mvnw`)를 사용하십시오.
 NiFi 2.10 parent POM이 Maven 3.9.16 이상을 요구하기 때문에, wrapper가 해당 버전을 받아
 고정해 줍니다.
+
+## 버전과 릴리스
+
+제품 버전은 SemVer(현재 `0.5.1`)이고 NAR·배포 패키지·이미지·Helm 차트·오퍼레이터·설정 도구가 같은 버전을 씁니다.
+기반 Apache NiFi 버전(현재 2.10.0)은 루트 `pom.xml`의 `nifi.version`으로 따로 관리하며 파일 이름과 이미지 태그에
+함께 표기합니다. 버전은 `scripts/set-version.sh <버전>`으로만 바꾸고, `scripts/check-version.sh`가 모든 위치가
+일치하는지 검사합니다. 버전 규칙과 변경 내역은 [CHANGELOG.md](CHANGELOG.md)를 참고하십시오.
+
+릴리스마다 다음 파일이 첨부됩니다(`0.5.1` 기준).
+
+| 설치 방법 | 받을 파일 |
+|---|---|
+| Linux 서버에 직접 설치 | `argus-flow-0.5.1-nifi-2.10.0-bin.tar.gz` |
+| RHEL/Rocky 계열 RPM | `argus-flow-nifi-0.5.1-1.x86_64.rpm` |
+| 운영 중인 NiFi 2.10.0에 확장만 추가 | `argus-flow-nars-0.5.1.zip` |
+| Kubernetes (Helm) | `argus-flow-0.5.1.tgz` |
+| Kubernetes (kubectl 한 파일) | `argus-flow-operator-0.5.1.yaml` |
+| 폐쇄망 Kubernetes | `argus-flow-operator-image-0.5.1.tar` |
+| 도구 | `argus-config-0.5.1.pyz`, `argus-user-cli-0.5.1.jar`, `argus-flow-db-iaa-sql-0.5.1.zip` |
+| 무결성·보안 점검 | `SHA256SUMS`, `argus-flow-0.5.1-sbom.cdx.json` |
+
+컨테이너 이미지는 Docker Hub에 공개되어 있습니다: `datadynamics/argus-flow-nifi:0.5.1`
+(`0.5.1-nifi2.10.0`과 같은 이미지), `datadynamics/argus-flow-operator:0.5.1`. `latest` 태그는 붙이지 않습니다.
 
 ## 설치본 설정
 

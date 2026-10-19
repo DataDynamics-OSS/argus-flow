@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright 2026 Data Dynamics Inc.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<!-- argus-flow-nars-<version>.zip: tar.gz 의 extensions/ 와 같은 NAR 집합(Argus NAR 전부 +
+     nifi-hadoop-libraries-nar). 최상위 디렉터리 없이 NAR 만 담는다 — NiFi 의
+     nar_extensions/ (또는 nifi.nar.library.autoload.directory) 에 그대로 풀면 자동 로드된다.
+     NAR 별 LICENSE/NOTICE 는 각 NAR 의 META-INF 에 들어 있다. -->
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.2.0 http://maven.apache.org/xsd/assembly-2.2.0.xsd">
+    <id>nars</id>
+    <formats>
+        <format>zip</format>
+    </formats>
+    <includeBaseDirectory>false</includeBaseDirectory>
+    <fileSets>
+        <fileSet>
+            <directory>${project.build.directory}/nars</directory>
+            <outputDirectory>.</outputDirectory>
+            <includes>
+                <include>*.nar</include>
+            </includes>
+        </fileSet>
+    </fileSets>
+</assembly>

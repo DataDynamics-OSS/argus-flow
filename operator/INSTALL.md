@@ -27,8 +27,9 @@
 | Kubernetes 클러스터 1.27 이상 | Operator와 NiFi가 실행될 곳 (k3s, kind, minikube, 사내 클러스터 모두 가능) | `kubectl version` |
 | `kubectl` | 클러스터에 명령을 보내는 도구 | `kubectl version --client` |
 | 기본 StorageClass | NiFi 데이터(PVC)를 저장할 디스크 | `kubectl get storageclass` |
-| Docker | Operator 이미지를 빌드 | `docker version` |
-| 이 저장소 | 설치 파일(`operator/`) | `git clone` 후 `cd argus-flow/operator` |
+| 인터넷(Docker Hub) 접근 | 클러스터 노드가 Operator 이미지 `datadynamics/argus-flow-operator`를 받음. 폐쇄망이면 2.2 참고 | — |
+| 이 저장소 또는 릴리스 첨부 파일 | 설치 파일(`operator/`, Helm 차트) 또는 `argus-flow-operator-0.5.1.yaml` | `git clone` 후 `git checkout v0.5.1` |
+| (선택) Docker | Operator 이미지를 직접 빌드하거나 폐쇄망으로 옮길 때만 | `docker version` |
 | (선택) Helm 3 이상 | Helm으로 설치할 때만 | `helm version` |
 | (6단계) cert-manager | TLS 인증서 자동 발급. 2대 이상 클러스터는 TLS가 필수 | 6.1에서 설치 |
 
@@ -80,39 +81,47 @@ local-path (default)   rancher.io/local-path   ...
 
 ## 2. Operator 이미지 준비
 
-Operator 이미지는 공개 레지스트리에 올라가 있지 않습니다. 저장소의 소스로 **직접 빌드**한 뒤, 클러스터가
-가져갈 수 있는 곳에 두어야 합니다. 이 문서에서는 이미지 이름을 아래처럼 정하고 진행합니다. 원하는 이름으로
-바꿔도 되지만, 이후 단계에서도 똑같이 바꿔 써야 합니다.
+Operator 이미지는 Docker Hub에 **공개 이미지**로 올라가 있습니다. 클러스터 노드가 Docker Hub에 접근할 수 있으면
+이 단계에서 할 일은 이미지 이름을 정해 두는 것뿐입니다. 이후 단계는 이 변수를 씁니다.
 
 ```bash
-export OPERATOR_IMAGE=nifi-operator:0.1.0
+export OPERATOR_IMAGE=datadynamics/argus-flow-operator:0.5.1
 ```
 
-### 2.1 빌드
+- 태그는 릴리스 버전과 같습니다(`0.5.1`, 같은 MINOR의 최신 패치를 가리키는 `0.5`). `latest` 태그는 없습니다.
+- `operator/deploy/operator-deployment.yaml`과 Helm 차트의 기본 이미지가 이미 이 이름입니다. 그대로 쓰면
+  3단계에서 이미지 이름을 바꿀 필요가 없습니다.
+- Docker Hub는 인증하지 않은 pull의 횟수를 제한합니다. 노드가 많거나 자주 재배포한다면 Docker Hub 계정으로
+  `imagePullSecrets`를 만들어 쓰거나, 사내 레지스트리에 미러링하세요(2.2).
 
-`operator/` 디렉토리에서 실행합니다.
+### 2.1 이미지가 받아지는지 확인 (선택)
 
 ```bash
-cd operator
-docker build -t "$OPERATOR_IMAGE" .
+docker pull "$OPERATOR_IMAGE"
+docker inspect "$OPERATOR_IMAGE" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}'
 ```
 
-마지막에 `naming to docker.io/library/nifi-operator:0.1.0` 같은 줄이 나오면 성공입니다.
+`0.5.1`이 출력되면 됩니다.
 
-### 2.2 클러스터로 옮기기 — 환경에 맞는 방법 하나만
+### 2.2 폐쇄망 또는 사내 레지스트리
+
+클러스터가 Docker Hub에 접근할 수 없으면 GitHub Release에 첨부된 이미지 파일
+`argus-flow-operator-image-0.5.1.tar`(`docker save` 결과)를 옮겨서 씁니다. 받은 뒤 `SHA256SUMS`로 무결성을 확인하세요
+(`sha256sum -c SHA256SUMS --ignore-missing`).
 
 | 환경 | 방법 |
 |---|---|
-| **사내/클라우드 클러스터** (노드가 여러 대) | 레지스트리에 올립니다. 아래 "레지스트리" 참고 |
-| **k3s** (단일 서버) | `docker save "$OPERATOR_IMAGE" \| sudo k3s ctr images import -` |
-| **kind** | `kind load docker-image "$OPERATOR_IMAGE"` |
-| **minikube** | `minikube image load "$OPERATOR_IMAGE"` |
+| **사내/클라우드 클러스터** (노드가 여러 대) | 사내 레지스트리에 올립니다. 아래 "레지스트리" 참고 |
+| **k3s** (단일 서버) | `sudo k3s ctr images import argus-flow-operator-image-0.5.1.tar` |
+| **kind** | `kind load image-archive argus-flow-operator-image-0.5.1.tar` |
+| **minikube** | `minikube image load argus-flow-operator-image-0.5.1.tar` |
 
-**레지스트리에 올리는 경우**: 이미지 이름에 레지스트리 주소를 붙여 다시 정하고 push합니다.
+**레지스트리에 올리는 경우**: 이미지를 불러온 뒤 레지스트리 주소를 붙여 다시 정하고 push합니다.
 
 ```bash
-export OPERATOR_IMAGE=registry.example.com/platform/nifi-operator:0.1.0
-docker tag nifi-operator:0.1.0 "$OPERATOR_IMAGE"
+docker load -i argus-flow-operator-image-0.5.1.tar          # 또는 연결된 환경에서 docker pull
+export OPERATOR_IMAGE=registry.example.com/platform/argus-flow-operator:0.5.1
+docker tag datadynamics/argus-flow-operator:0.5.1 "$OPERATOR_IMAGE"
 docker login registry.example.com
 docker push "$OPERATOR_IMAGE"
 ```
@@ -120,14 +129,29 @@ docker push "$OPERATOR_IMAGE"
 > 비공개 레지스트리라면 클러스터가 이미지를 받을 수 있도록 `imagePullSecrets`가 필요합니다.
 > 이 경우 3단계 설치 후 Deployment에 pull secret을 추가하세요(클러스터 관리자에게 문의).
 
+### 2.3 직접 빌드 (선택 — 소스를 고쳤을 때)
+
+공개 이미지 대신 저장소의 소스로 직접 빌드할 수도 있습니다. `operator/` 디렉토리에서 실행합니다.
+
+```bash
+export OPERATOR_IMAGE=argus-flow-operator:dev
+cd operator
+docker build -t "$OPERATOR_IMAGE" .
+```
+
+마지막에 `naming to docker.io/library/argus-flow-operator:dev` 같은 줄이 나오면 성공입니다. 만든 이미지는
+2.2의 표와 같은 방법으로 클러스터에 옮깁니다(k3s는 `docker save "$OPERATOR_IMAGE" | sudo k3s ctr images import -`,
+kind는 `kind load docker-image "$OPERATOR_IMAGE"`, minikube는 `minikube image load "$OPERATOR_IMAGE"`).
+
 ---
 
 ## 3. Operator 설치
 
-두 방법 중 **하나만** 고르세요. 결과는 같습니다.
+세 방법 중 **하나만** 고르세요. 결과는 같습니다.
 
-- **방법 A — kubectl**: 파일을 직접 적용합니다. 무엇이 설치되는지 눈으로 확인하기 좋습니다.
+- **방법 A — kubectl**: 저장소의 파일을 직접 적용합니다. 무엇이 설치되는지 눈으로 확인하기 좋습니다.
 - **방법 B — Helm**: 명령 한 줄로 설치·업그레이드·삭제합니다.
+- **방법 C — 릴리스 매니페스트 한 파일**: 저장소 없이 GitHub Release의 `argus-flow-operator-0.5.1.yaml` 하나로 설치합니다.
 
 설치되는 것은 다음 네 가지입니다.
 
@@ -152,22 +176,33 @@ kubectl create namespace nifi-operator-system
 # 3) 권한
 kubectl apply -f deploy/rbac.yaml
 
-# 4) Operator 배포 — 2단계에서 정한 이미지 이름으로 바꿔서 적용
-sed -e "s#image: datadynamics/nifi-operator:latest#image: ${OPERATOR_IMAGE}#" \
-    -e "s#imagePullPolicy: Always#imagePullPolicy: IfNotPresent#" \
-    deploy/operator-deployment.yaml | kubectl apply -f -
+# 4) Operator 배포 (기본 이미지 datadynamics/argus-flow-operator:0.5.1)
+kubectl apply -f deploy/operator-deployment.yaml
 ```
 
-> 4번은 원본 파일의 이미지 이름(`datadynamics/nifi-operator:latest`)을 내가 만든 이미지로 바꾸고,
-> 이미 받아 둔 이미지를 쓰도록(`IfNotPresent`) 바꿔서 적용합니다. 파일을 직접 고쳐서 적용해도 됩니다.
+> 2.2·2.3에서 이미지 이름을 바꿨다면 4번 대신 이미지 이름을 치환해서 적용합니다.
+>
+> ```bash
+> sed -e "s#image: datadynamics/argus-flow-operator:0.5.1#image: ${OPERATOR_IMAGE}#" \
+>     deploy/operator-deployment.yaml | kubectl apply -f -
+> ```
 
 ### 방법 B — Helm
 
-저장소 최상위 디렉토리에서 실행합니다. 이미지 이름을 저장소 주소(`repository`)와 태그(`tag`)로 나눠 넣습니다.
+저장소 최상위 디렉토리에서 실행합니다. 차트의 기본 이미지가 `datadynamics/argus-flow-operator:0.5.1`입니다.
 
 ```bash
 cd ..   # operator/ 에 있었다면 저장소 최상위로
 
+helm install argus-flow charts/argus-flow \
+  --namespace nifi-operator-system --create-namespace
+```
+
+저장소 대신 GitHub Release의 차트 파일을 써도 됩니다: `helm install argus-flow ./argus-flow-0.5.1.tgz --namespace nifi-operator-system --create-namespace`.
+
+2.2·2.3에서 이미지 이름을 바꿨다면 저장소 주소(`repository`)와 태그(`tag`)로 나눠 넣습니다.
+
+```bash
 helm install argus-flow charts/argus-flow \
   --namespace nifi-operator-system --create-namespace \
   --set operator.image.repository="${OPERATOR_IMAGE%:*}" \
@@ -176,10 +211,21 @@ helm install argus-flow charts/argus-flow \
 
 Helm은 차트의 `crds/` 디렉토리에 있는 CRD를 먼저 설치합니다. 따로 `kubectl apply`할 필요가 없습니다.
 
+### 방법 C — 릴리스 매니페스트
+
+GitHub Release에 첨부된 `argus-flow-operator-0.5.1.yaml`은 CRD·네임스페이스 `nifi-operator-system`·권한·Deployment를
+한 파일로 묶은 것입니다(Helm 차트를 `helm template`으로 렌더링한 결과, 이미지 `datadynamics/argus-flow-operator:0.5.1`).
+
+```bash
+kubectl apply -f argus-flow-operator-0.5.1.yaml
+```
+
+이미지 이름을 바꿔야 하면 방법 A처럼 `sed`로 `datadynamics/argus-flow-operator:0.5.1`을 치환해서 적용합니다.
+
 ### 감시 범위 (참고)
 
 Operator는 기본적으로 **모든 네임스페이스**의 `NiFiCluster`를 관리합니다. 특정 네임스페이스만 관리하게
-하려면 Deployment에 실행 인자를 지정합니다(방법 A, B 모두 같은 명령).
+하려면 Deployment에 실행 인자를 지정합니다(방법 A, B, C 모두 같은 명령).
 
 ```bash
 kubectl -n nifi-operator-system patch deploy nifi-operator --type=json -p \
@@ -248,6 +294,14 @@ spec:
   config:
     jvmHeapSize: "1536m" # NiFi JVM 힙
 ```
+
+> 예제는 공식 `apache/nifi` 이미지를 씁니다. Argus 확장(NAR)이 들어 있는 이미지를 쓰려면 `image`와 `version`을
+> Docker Hub의 Argus Flow NiFi 이미지로 바꿉니다(`version`이 이미지 태그가 됩니다).
+>
+> ```yaml
+>   image: "datadynamics/argus-flow-nifi"
+>   version: "0.5.1"       # Argus Flow 버전 (기반 NiFi 2.10.0, 태그 0.5.1-nifi2.10.0 과 같은 이미지)
+> ```
 
 ### 5.2 기동 기다리기
 
@@ -476,6 +530,12 @@ kubectl delete namespace nifi-operator-system
 kubectl delete crd nificlusters.datadynamics.io nififlows.datadynamics.io   # Helm은 CRD를 지우지 않습니다
 ```
 
+**방법 C로 설치했다면** (네임스페이스·CRD까지 한 번에 지워집니다)
+
+```bash
+kubectl delete -f argus-flow-operator-0.5.1.yaml
+```
+
 cert-manager와 6.2의 CA는 다른 서비스도 쓸 수 있으므로 필요 없을 때만 지우세요
 (`kubectl delete -f internal-ca.yaml`, cert-manager는 설치에 쓴 URL로 `kubectl delete -f`).
 
@@ -483,18 +543,20 @@ cert-manager와 6.2의 CA는 다른 서비스도 쓸 수 있으므로 필요 없
 
 ## 8. Operator 업그레이드
 
-새 소스로 이미지를 다시 빌드하고(2단계, 태그를 올려서), 배포된 이미지만 바꿉니다.
+새 릴리스의 이미지로 배포된 이미지만 바꿉니다. 아래 `<새 버전>`은 올릴 릴리스 버전입니다(예: `0.6.0`).
+저장소는 그 릴리스 태그로 받아 둡니다(`git checkout v<새 버전>`).
 
 ```bash
-export OPERATOR_IMAGE=nifi-operator:0.2.0
-# 2단계 빌드·옮기기 후
+export OPERATOR_IMAGE=datadynamics/argus-flow-operator:<새 버전>
+# 폐쇄망·직접 빌드라면 2.2·2.3으로 이미지를 옮긴 뒤
 kubectl apply -f operator/deploy/crds/      # CRD가 바뀌었을 수 있으므로 먼저 적용
 kubectl -n nifi-operator-system set image deploy/nifi-operator operator="$OPERATOR_IMAGE"
 kubectl -n nifi-operator-system rollout status deploy/nifi-operator
 ```
 
-Helm이라면 `helm upgrade argus-flow charts/argus-flow -n nifi-operator-system --set operator.image.tag=0.2.0 ...`.
+Helm이라면 새 버전 차트로 `helm upgrade argus-flow charts/argus-flow -n nifi-operator-system`(차트의 기본 이미지 태그가 새 버전).
 `helm upgrade`는 CRD를 갱신하지 않으므로 `kubectl apply -f charts/argus-flow/crds/`를 먼저 실행하세요.
+방법 C로 설치했다면 새 릴리스의 `argus-flow-operator-<새 버전>.yaml`을 `kubectl apply -f`하면 CRD와 이미지가 함께 갱신됩니다.
 
 Operator를 업그레이드하는 것만으로는 실행 중인 NiFi가 재시작되지 않습니다. 다만 그 뒤 `NiFiCluster`의 spec을
 바꾸면, 새 버전 Operator가 만든 설정으로 노드가 하나씩 롤링 재시작될 수 있습니다. 업그레이드 직후 첫 spec 변경은
@@ -514,7 +576,7 @@ kubectl get pods -n nifi                                              # NiFi Pod
 
 | 증상 | 원인 | 해결 |
 |---|---|---|
-| Operator Pod가 `ImagePullBackOff` / `ErrImagePull` | 클러스터가 Operator 이미지를 찾지 못함 | 2.2를 다시 확인. 이미지 이름이 3단계와 같은지, k3s·kind·minikube는 이미지를 옮겼는지, 레지스트리는 pull 권한(imagePullSecrets)이 있는지 |
+| Operator Pod가 `ImagePullBackOff` / `ErrImagePull` | 클러스터가 Operator 이미지를 찾지 못함, 또는 Docker Hub pull 횟수 제한 | 2단계를 다시 확인. 이미지 이름이 3단계와 같은지, 노드가 Docker Hub에 접근할 수 있는지(`toomanyrequests`면 횟수 제한 → imagePullSecrets), 폐쇄망 k3s·kind·minikube는 이미지를 옮겼는지, 사내 레지스트리는 pull 권한(imagePullSecrets)이 있는지 |
 | Operator 로그에 `Forbidden` / `403` | 권한(RBAC) 미적용 | `kubectl apply -f deploy/rbac.yaml` 다시 적용. ClusterRoleBinding의 네임스페이스가 Operator 네임스페이스와 같은지 확인 |
 | `kubectl apply` 시 `no matches for kind "NiFiCluster"` | CRD 미설치 | `kubectl apply -f operator/deploy/crds/` |
 | NiFi Pod가 `Pending` | 기본 StorageClass 없음, 또는 CPU·메모리 부족 | `kubectl describe pod <이름> -n nifi`의 Events 확인. 1.3·1.4 참고 |

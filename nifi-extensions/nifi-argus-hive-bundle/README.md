@@ -126,6 +126,9 @@ CompactHive3Table
 - 파티션 테이블은 모든 파티션 키를 지정해야 한다(테이블 전체를 한 번에 compaction하지 않는다).
 - Hive 4는 Non-ACID managed 테이블을 기본적으로 EXTERNAL로 바꿔 만든다. external 테이블은 `CONCATENATE`를 할 수 없어 `failure`로 보낸다.
 - Hive 4는 delta가 하나뿐인 경우처럼 compaction 임계값에 못 미치면 요청을 `refused`로 끝낸다(`failure`, 이유에 Hive 메시지 포함).
+- Hive 4는 ACID 테이블 Location의 전체 경로에 `_`나 `.`로 시작하는 디렉토리(예: `/data/_work/warehouse`)가 있으면 그 아래 delta를
+  숨김 경로로 보고 읽지 않는다. 조회 결과가 0행이 되고 compaction도 `refused`("None of the compaction thresholds met")로 끝난다.
+  웨어하우스·테이블 경로에는 `_`·`.`로 시작하는 구성 요소를 쓰지 않는다(Hive 3.1에는 이 검사가 없다).
 
 ### 출력 속성
 

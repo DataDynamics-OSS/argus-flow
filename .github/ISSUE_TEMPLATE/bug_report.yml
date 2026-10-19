@@ -38,7 +38,7 @@ body:
     id: version
     attributes:
       label: Argus Flow 버전
-      placeholder: "2.10.0-1"
+      placeholder: "0.5.1"
     validations:
       required: true
 

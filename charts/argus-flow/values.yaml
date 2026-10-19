@@ -1,7 +1,8 @@
 operator:
   image:
-    repository: argus-flow/nifi2-operator
-    tag: latest
+    # Docker Hub 공개 이미지. 태그는 차트 버전과 같다 (scripts/set-version.sh 가 갱신)
+    repository: datadynamics/argus-flow-operator
+    tag: "0.5.1"
     pullPolicy: IfNotPresent
   replicas: 1
   resources:

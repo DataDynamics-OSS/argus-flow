@@ -1,6 +1,6 @@
 """argus-nifi-config — NiFi conf/ 디렉터리 대화형 설정 도구."""
 
-__version__ = "0.1.0"
+__version__ = "0.5.1"
 
 
 def version_string() -> str:

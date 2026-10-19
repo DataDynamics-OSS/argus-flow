@@ -3,10 +3,23 @@
 이 프로젝트의 주요 변경 사항을 기록합니다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따릅니다.
 
-버전은 `<NiFi 버전>-<릴리스 번호>` 형태입니다. 예를 들어 `2.10.0-1`은 Apache NiFi 2.10.0을
-기반으로 한 첫 번째 릴리스를 뜻합니다. 기반 NiFi 버전이 올라가면 릴리스 번호는 1로 돌아갑니다.
+버전은 0.5.0부터 [Semantic Versioning](https://semver.org/lang/ko/)을 따르는 **제품 버전**입니다.
+NAR, 배포 패키지(tar.gz/RPM), 컨테이너 이미지, Helm 차트, 오퍼레이터, 설정 도구가 모두 같은 버전을 씁니다.
+
+- 1.0.0 전까지는 MINOR 버전(0.x)에서도 호환이 깨질 수 있습니다. 그런 변경은 각 절의
+  "업그레이드 시 동작이 바뀝니다" 항목에 적습니다.
+- **기반 Apache NiFi 버전은 제품 버전과 따로 표기합니다.** 배포 파일 이름(`argus-flow-0.5.0-nifi-2.10.0-bin.tar.gz`),
+  이미지 태그(`argus-flow-nifi:0.5.0-nifi2.10.0`), RPM 설명, Helm 차트 annotation에서 확인할 수 있습니다.
+- 0.5.0 이전에는 `<NiFi 버전>-<릴리스 번호>` 형태(`2.10.0-1`)를 썼습니다. RPM은 이 변경 때문에
+  **Epoch 1**을 씁니다(`1:0.5.0-1`). Epoch가 없으면 `2.10.0-1`이 설치된 서버에서 0.5.0이 낮은 버전으로 보여
+  업그레이드가 거부됩니다.
 
 ## [Unreleased]
+
+## [0.5.1] - 2026-10-19
+
+0.5.0 이후 첫 공개 릴리스입니다. 0.5.0의 변경 사항 전부와 RPM 업그레이드 수정을 담고 있습니다
+(0.5.0은 릴리스 검증에서 RPM 업그레이드 결함이 발견되어 공개하지 않았습니다).
 
 ### Added
 - **Trino 번들** (`nifi-argus-trino`) — Trino를 조회·변환·유지보수 엔진으로 씁니다(Trino JDBC 483).
@@ -97,6 +110,17 @@
   `NIFI_SSL_DAYS`로 조정). IP로 NiFi에 접속할 때 발생하는 `Invalid SNI` 해결용.
 
 ### Changed
+- **업그레이드 시 주의 — 버전 체계 변경 (`2.10.0-1` → `0.5.0`).** 기반 NiFi 버전(2.10.0)은 그대로입니다.
+  - NAR 번들 좌표가 `io.datadynamics.nifi:<nar>:2.10.0-1`에서 `:0.5.0`으로 바뀝니다. 기존 플로우가 참조하는
+    `2.10.0-1` 번들이 없고 같은 번들의 다른 버전이 하나뿐이면 NiFi가 그 버전으로 바꿔 로드합니다.
+    **이전 버전 NAR(`*-2.10.0-1.nar`)을 `extensions/`·`nar_extensions/`에 남겨 두지 마세요.** 두 버전이 함께 있으면
+    기존 컴포넌트가 계속 이전 버전을 씁니다.
+  - RPM은 Epoch 1(`1:0.5.0-1`)이므로 `dnf upgrade argus-flow-nifi`로 `2.10.0-1`에서 그대로 올라갑니다.
+    `config|noreplace` 설정 파일은 보존됩니다.
+  - 배포 파일 이름이 `argus-flow-nifi-2.10.0-1.tar.gz`에서 `argus-flow-0.5.0-nifi-2.10.0-bin.tar.gz`로,
+    tar.gz의 최상위 디렉터리가 `argus-flow-0.5.0-nifi-2.10.0/`으로 바뀝니다. 설치 스크립트에 경로를 적어 두었다면 고치세요.
+  - 컨테이너 이미지 이름이 Docker Hub의 `datadynamics/argus-flow-nifi`, `datadynamics/argus-flow-operator`로
+    통일됩니다. Helm 차트와 `operator/deploy/`의 기본 이미지는 `datadynamics/argus-flow-operator:0.5.0`입니다(`latest` 태그는 없음).
 - **업그레이드 시 동작이 바뀝니다.** 이전에 success로 넘어가던 입력 일부가 failure로 갑니다.
   - `MultilineCsvParser`: 잘못된 입력 바이트, 출력 문자셋에 없는 문자(예: EUC-KR 출력의 확장 한글), 닫히지 않은
     Quote, 닫는 Quote 뒤의 구분자가 아닌 문자는 치환·병합하지 않고 failure로 보냅니다. 오류 위치를 `csv.error`에
@@ -136,6 +160,12 @@
   `MVNW_REPOURL` 환경변수를 사용.
 
 ### Fixed
+- RPM 업그레이드(`dnf upgrade`)가 `conf/nifi.properties` 등을 패키지 기본값으로 덮어써, NiFi가 첫 기동 때
+  생성한 Sensitive Properties Key와 키스토어·트러스트스토어 비밀번호가 지워지고 업그레이드 후 기동에 실패하던 문제.
+  이제 `conf/`의 파일 전부(`nifi.properties`, `bootstrap.conf`, `state-management.xml`, `logback.xml`,
+  `zookeeper.properties`, `authorizers.xml`, `login-identity-providers.xml`)를 `config(noreplace)`로 설치합니다.
+  수정한 파일은 업그레이드 때 그대로 두고, 패키지 기본값이 바뀌었으면 `<파일>.rpmnew`로 남깁니다.
+  `2.10.0-1`에서 올리는 경우에도 적용됩니다.
 - **NiFi 2.x 오퍼레이터** (`operator/`) — k3s 실클러스터 통합 테스트로 확인한 결함 수정.
   - 기동: 오퍼레이터 이미지가 uid 1000의 passwd 항목이 없어 kopf가 기동 직후 죽던 문제, kopf가 요구하는
     CRD/네임스페이스 조회 권한이 ClusterRole에 없던 문제, init 컨테이너의 `cp -a`가 emptyDir에서 실패해
@@ -178,9 +208,14 @@
 - `scripts/ssl/ssl-generate.sh`가 `#!/bin/sh`로 선언되었으나 bash 전용 문법을 사용해
   dash에서 실패하던 문제.
 
+## [0.5.0] - 2026-10-19 [YANKED]
+
+릴리스 검증에서 RPM 업그레이드 결함이 발견되어 GitHub Release를 공개하지 않았습니다. 변경 사항은 [0.5.1]을 보세요.
+Docker Hub에 게시된 `0.5.0` 이미지는 그대로 남아 있으며 기능은 0.5.1과 같습니다.
+
 ## [2.10.0-1]
 
-첫 통합 릴리스. 흩어져 있던 NiFi 확장·오퍼레이터·SSL 스크립트 저장소를 하나의 모노레포로
+첫 통합 버전(태그로 배포되지 않음). 흩어져 있던 NiFi 확장·오퍼레이터·SSL 스크립트 저장소를 하나의 모노레포로
 통합했습니다.
 
 ### Added
@@ -195,5 +230,6 @@
 - **컨테이너 이미지** — `apache/nifi:2.10.0` 기반에 Argus NAR 포함.
 - **`nifi-config` CLI** — NiFi `conf/` 대화형 설정 도구.
 
-[Unreleased]: https://github.com/DataDynamics-OSS/argus-flow/compare/v2.10.0-1...HEAD
-[2.10.0-1]: https://github.com/DataDynamics-OSS/argus-flow/releases/tag/v2.10.0-1
+[Unreleased]: https://github.com/DataDynamics-OSS/argus-flow/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/DataDynamics-OSS/argus-flow/releases/tag/v0.5.1
+[0.5.0]: https://github.com/DataDynamics-OSS/argus-flow/releases/tag/v0.5.0

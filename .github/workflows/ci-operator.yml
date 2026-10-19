@@ -27,4 +27,4 @@ jobs:
       - name: Run tests
         run: python -m pytest
       - name: Build image
-        run: docker build -t argus-flow/nifi2-operator:ci .
+        run: docker build -t datadynamics/argus-flow-operator:ci .

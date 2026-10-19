@@ -1,32 +1,239 @@
 name: Release
 
+# 태그 v<버전> push → 전체 빌드·테스트·패키징 → 이미지 push → Draft Release.
+# 사람이 Draft 를 검증한 뒤 Publish 한다. 수동 실행(workflow_dispatch)은 기본이 dry run 으로,
+# 빌드·테스트·패키징·이미지 빌드까지만 하고 이미지 push 와 Release 생성은 건너뛴다.
+#
+# 실행 환경: 이 워크플로 전용 self-hosted 러너(라벨 argus-flow-release). 빌드가 NiFi 바이너리(0.8GB),
+# tar.gz(1.5GB)·RPM(1.1GB)·NAR zip, NiFi 이미지(3.4GB), Testcontainers 이미지(Trino·Hive)를 한 번에 다뤄
+# 호스팅 러너 디스크(약 14GB)로는 부족하다.
+#
+# 잡을 하나로 둔 이유: 러너가 1대라 잡을 나눠도 순차 실행되고, 잡 사이에 수 GB 산출물을
+# upload/download-artifact 로 넘기는 비용(시간·저장소 용량)만 생긴다. 대신 단계별 step 으로 나눠
+# 실패 지점을 구분하고, 실제 작업은 scripts/build-release.sh 의 단계(maven/package/images/sbom/…)를
+# 그대로 불러 로컬 빌드와 같은 경로를 쓴다.
+#
+# 러너 호스트에 대한 가정: docker(러너 사용자가 docker 그룹), git, curl, coreutils 만 있다고 본다.
+# JDK·Python 은 setup-* 액션으로, nfpm·helm 은 고정 버전을 SHA-256 검증 후 받는다. Docker 로그인은
+# 잡 전용 DOCKER_CONFIG 에 저장해 러너 사용자의 ~/.docker/config.json 을 건드리지 않는다.
+
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "dry run — 빌드·테스트·패키징만 하고 이미지 push·Release 생성은 건너뜀"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # Draft Release 생성·첨부
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  # 고정 도구 버전 (scripts/build-release.sh 의 *_EXPECTED 와 같게 유지)
+  NFPM_VERSION: "2.48.0"
+  NFPM_SHA256: "6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750"
+  HELM_VERSION: "v4.3.1"
+  HELM_SHA256: "0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b"
+  JAVA_VERSION: "21"
+  PYTHON_VERSION: "3.12"
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    # 공개 미러 저장소(DataDynamics-OSS)에는 이 러너가 없으므로 실행하지 않는다
+    if: github.repository_owner == 'DataDynamics'
+    runs-on: [self-hosted, linux, x64, argus-flow-release]
+    timeout-minutes: 300
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+      HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      # ── 준비 ──────────────────────────────────────────────────────────────
+      - name: Prepare runner
+        run: |
+          # 잡 전용 Docker 설정 디렉터리 — 러너 사용자의 저장된 로그인을 쓰지도, 덮어쓰지도 않는다
+          mkdir -p "$RUNNER_TEMP/docker-config" "$RUNNER_TEMP/bin"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/docker-config" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          echo "dry run: $DRY_RUN, event: $GITHUB_EVENT_NAME, ref: $GITHUB_REF"
+          df -h "$GITHUB_WORKSPACE" | tail -1
+          avail_kb=$(df -Pk "$GITHUB_WORKSPACE" | awk 'NR==2 {print $4}')
+          if [ "$avail_kb" -lt $((40 * 1024 * 1024)) ]; then
+            echo "::error::러너 디스크 여유가 40GB 미만입니다 ($((avail_kb / 1024 / 1024))GB)"; exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          clean: true          # 이전 실행의 target/·docker/nars 등 추적되지 않는 파일 제거 (git clean -ffdx)
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up JDK
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
-          java-version: "21"
-          cache: maven
-      - name: Install nfpm
-        run: |
-          curl -sL https://github.com/goreleaser/nfpm/releases/latest/download/nfpm_amd64.deb -o nfpm.deb
-          sudo dpkg -i nfpm.deb
-      - name: Build tarball and RPM
-        run: make rpm  # rpm 타깃이 dist(전체 빌드+테스트+tar.gz)를 선행 실행
-      - uses: azure/setup-helm@v4
-      - name: Package helm chart
-        run: helm package charts/argus-flow -d distribution/target/
-      - name: Upload release artifacts
-        uses: softprops/action-gh-release@v2
+          java-version: ${{ env.JAVA_VERSION }}
+          # cache 미사용: self-hosted 러너는 ~/.m2 가 실행 사이에 남는다. actions/cache 로 수 GB 를 올리지 않는다
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          files: |
-            distribution/target/argus-flow-nifi-*.tar.gz
-            distribution/target/*.rpm
-            distribution/target/argus-flow-*.tgz
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install pinned nfpm and helm
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -fsSLo nfpm.tar.gz "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          echo "${NFPM_SHA256}  nfpm.tar.gz" | sha256sum -c -
+          tar xzf nfpm.tar.gz -C bin nfpm
+          curl -fsSLo helm.tar.gz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          echo "${HELM_SHA256}  helm.tar.gz" | sha256sum -c -
+          tar xzf helm.tar.gz --strip-components=1 -C bin linux-amd64/helm
+          rm -f nfpm.tar.gz helm.tar.gz
+          bin/nfpm --version | grep GitVersion
+          bin/helm version --short
+
+      # ── verify ────────────────────────────────────────────────────────────
+      - name: Verify version and release preconditions
+        id: meta
+        run: |
+          version="$(python3 scripts/versioning.py get)"
+          nifi="$(python3 scripts/versioning.py get-nifi)"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            scripts/check-version.sh "$GITHUB_REF_NAME"
+          else
+            scripts/check-version.sh
+            if [ "$DRY_RUN" != true ]; then
+              echo "::error::dry run 이 아닌 릴리스는 태그(v${version})에서만 실행할 수 있습니다 (현재 ref: $GITHUB_REF)"; exit 1
+            fi
+          fi
+          if [ "$DRY_RUN" != true ] && [ "$HAS_DOCKERHUB" != true ]; then
+            echo "::error::secret DOCKERHUB_USERNAME / DOCKERHUB_TOKEN 이 없습니다 (이미지 push 에 필요)"; exit 1
+          fi
+          prerelease=false
+          case "$version" in *-*) prerelease=true ;; esac
+          {
+            echo "version=$version"
+            echo "nifi_version=$nifi"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+          echo "### Argus Flow $version (NiFi $nifi) — dry run: $DRY_RUN" >> "$GITHUB_STEP_SUMMARY"
+
+      # 이미지 push 용이지만 dry run 에서도 로그인해 둔다 — 익명 pull 횟수 제한(base 이미지,
+      # Testcontainers 이미지) 회피. secret 이 없으면 dry run 은 익명으로 진행한다.
+      - name: Log in to Docker Hub
+        if: env.HAS_DOCKERHUB == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          logout: false   # 정리 단계에서 잡 전용 DOCKER_CONFIG 를 통째로 지운다
+
+      # ── build / test ──────────────────────────────────────────────────────
+      - name: Build and test (Maven -Pdist, Testcontainers) + Maven SBOM
+        run: scripts/build-release.sh maven
+
+      - name: Operator tests
+        working-directory: operator
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv-operator"
+          "$RUNNER_TEMP/venv-operator/bin/pip" install -q -r requirements-dev.txt
+          "$RUNNER_TEMP/venv-operator/bin/python" -m pytest -q
+
+      - name: nifi-config tests
+        working-directory: tools/nifi-config
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv-nifi-config"
+          "$RUNNER_TEMP/venv-nifi-config/bin/pip" install -q -e '.[dev]'
+          "$RUNNER_TEMP/venv-nifi-config/bin/python" -m pytest -q
+
+      # ── package ───────────────────────────────────────────────────────────
+      - name: Package (tar.gz, RPM, NAR zip, tools, Helm chart, operator manifest)
+        run: scripts/build-release.sh package
+
+      - name: Build images (operator image is also saved as a release file)
+        run: scripts/build-release.sh images
+
+      # ── sbom / checksums / notes ──────────────────────────────────────────
+      - name: SBOM (Maven + Python, merged)
+        run: scripts/build-release.sh sbom
+
+      - name: Checksums and release notes
+        run: scripts/build-release.sh checksums notes
+
+      - name: Smoke test release files
+        working-directory: distribution/target/release
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          python3 "argus-config-${VERSION}.pyz" --version
+          java -jar "argus-user-cli-${VERSION}.jar" --help > /dev/null
+          python3 -c 'import sys, zipfile; n = [x for x in zipfile.ZipFile(sys.argv[1]).namelist() if x.endswith(".nar")]; print(len(n), "NARs"); sys.exit(0 if n else 1)' "argus-flow-nars-${VERSION}.zip"
+          helm show chart "argus-flow-${VERSION}.tgz" | grep -E '^(version|appVersion):'
+          while read -r img; do
+            docker image inspect "$img" --format "$img {{ index .Config.Labels \"org.opencontainers.image.version\" }} {{ index .Config.Labels \"org.opencontainers.image.revision\" }}"
+          done < ../release-images.txt
+          {
+            echo ''
+            echo '| 파일 | 크기 |'
+            echo '|---|---:|'
+            find . -maxdepth 1 -type f -printf '%f\t%s\n' | LC_ALL=C sort | awk -F'\t' '{printf "| `%s` | %.1f MiB |\n", $1, $2/1048576}'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # 작은 산출물만 워크플로 아티팩트로 남긴다(dry run 결과 확인용). 큰 파일은 Release 첨부로만 나간다.
+      - name: Upload release metadata
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-metadata-${{ steps.meta.outputs.version }}
+          path: |
+            distribution/target/release/SHA256SUMS
+            distribution/target/release/*.cdx.json
+            distribution/target/release/*.yaml
+            distribution/target/release-notes.md
+            distribution/target/release-images.txt
+          retention-days: 14
+          if-no-files-found: error
+
+      # ── images / draft release (dry run 이면 건너뜀) ───────────────────────
+      - name: Push images to Docker Hub
+        if: env.DRY_RUN != 'true'
+        run: |
+          while read -r img; do
+            [ -n "$img" ] || continue
+            echo "push docker.io/$img"
+            docker push "$img"
+          done < distribution/target/release-images.txt
+
+      - name: Create draft release
+        if: env.DRY_RUN != 'true'
+        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Argus Flow ${{ steps.meta.outputs.version }}
+          body_path: distribution/target/release-notes.md
+          draft: true
+          prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
+          make_latest: false   # Publish 할 때 사람이 정한다
+          files: distribution/target/release/*
+          fail_on_unmatched_files: true
+
+      # ── 정리 (항상) ───────────────────────────────────────────────────────
+      # 이 잡이 만든 이미지만 지운다. 다른 이미지(Testcontainers 캐시, 다른 저장소 러너의 이미지)는 건드리지 않는다.
+      - name: Clean up images and workspace
+        if: always()
+        run: |
+          if [ -f distribution/target/release-images.txt ]; then
+            xargs -r docker rmi < distribution/target/release-images.txt || true
+          fi
+          # 이 저장소 Dockerfile 이 붙이는 라벨이 있는 dangling 이미지(이전 빌드의 태그 잃은 이미지)만 정리
+          docker image prune -f --filter "label=io.datadynamics.nifi.version" || true
+          rm -rf distribution/target docker/nars "$RUNNER_TEMP/venv-operator" "$RUNNER_TEMP/venv-nifi-config"
+          docker logout >/dev/null 2>&1 || true
+          rm -rf "$RUNNER_TEMP/docker-config"
+          df -h "$GITHUB_WORKSPACE" | tail -1

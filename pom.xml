@@ -20,11 +20,11 @@
 
     <groupId>io.datadynamics.nifi</groupId>
     <artifactId>argus-flow</artifactId>
-    <version>2.10.0-1</version>
+    <version>0.5.1</version>
     <packaging>pom</packaging>
 
     <name>Argus Flow</name>
-    <description>Apache NiFi 2.10.0 packaging, custom extensions and K8s operator</description>
+    <description>Apache NiFi ${nifi.version} packaging, custom extensions and K8s operator</description>
     <url>https://github.com/DataDynamics-OSS/argus-flow</url>
 
     <organization>
@@ -51,7 +51,12 @@
     </issueManagement>
 
     <properties>
+        <!-- 기반 Apache NiFi 버전. 제품 버전(project.version)과 따로 관리한다 -->
         <nifi.version>2.10.0</nifi.version>
+        <!-- 재현 가능한 빌드: jar·NAR·assembly 항목의 타임스탬프 고정.
+             scripts/set-version.sh 가 갱신하고, 릴리스 빌드는 태그 커밋 시각으로 덮어쓴다
+             (-Dproject.build.outputTimestamp=...). -->
+        <project.build.outputTimestamp>2026-10-19T00:08:12Z</project.build.outputTimestamp>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
@@ -60,4 +65,39 @@
         <module>nifi-extensions</module>
         <module>distribution</module>
     </modules>
+
+    <build>
+        <!-- 릴리스 빌드 재현성을 위해 이 루트를 상속하는 모듈(distribution)의 플러그인 버전을 고정한다.
+             nifi-extensions 는 org.apache.nifi:nifi-extension-bundles 를 상속하므로 그쪽 버전을 따른다 -->
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-assembly-plugin</artifactId>
+                    <version>3.7.1</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-dependency-plugin</artifactId>
+                    <version>3.7.0</version>
+                </plugin>
+                <!-- SBOM: `./mvnw -Pdist package org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom`
+                     (scripts/build-release.sh). 결과는 target/argus-flow-maven-sbom.json -->
+                <plugin>
+                    <groupId>org.cyclonedx</groupId>
+                    <artifactId>cyclonedx-maven-plugin</artifactId>
+                    <version>2.9.3</version>
+                    <configuration>
+                        <projectType>application</projectType>
+                        <outputFormat>json</outputFormat>
+                        <outputName>argus-flow-maven-sbom</outputName>
+                        <includeTestScope>false</includeTestScope>
+                        <includeSystemScope>false</includeSystemScope>
+                        <includeProvidedScope>false</includeProvidedScope>
+                        <skipNotDeployed>false</skipNotDeployed>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
 </project>

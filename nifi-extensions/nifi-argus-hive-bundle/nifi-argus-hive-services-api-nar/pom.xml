@@ -21,7 +21,7 @@
     <parent>
         <groupId>io.datadynamics.nifi</groupId>
         <artifactId>nifi-argus-hive-bundle</artifactId>
-        <version>2.10.0-1</version>
+        <version>0.5.1</version>
     </parent>
 
     <artifactId>nifi-argus-hive-services-api-nar</artifactId>

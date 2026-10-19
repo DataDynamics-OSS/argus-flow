@@ -7,7 +7,7 @@
         <format>tar.gz</format>
     </formats>
     <includeBaseDirectory>true</includeBaseDirectory>
-    <baseDirectory>argus-flow-nifi-${project.version}</baseDirectory>
+    <baseDirectory>${argus.dist.name}</baseDirectory>
 
     <fileSets>
         <!-- upstream NiFi binary, unpacked by download-maven-plugin.

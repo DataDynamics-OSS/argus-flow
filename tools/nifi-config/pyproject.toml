@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "argus-nifi-config"
-version = "0.1.0"
+version = "0.5.1"
 description = "NiFi conf/ 디렉터리 대화형 설정 CLI (Argus Flow)"
 requires-python = ">=3.10"
 dependencies = [

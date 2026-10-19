@@ -1,5 +1,6 @@
-IMAGE_NAME ?= datadynamics/nifi-operator
-IMAGE_TAG ?= latest
+IMAGE_NAME ?= datadynamics/argus-flow-operator
+# 릴리스 태그는 제품 버전(루트 Makefile 의 VERSION). latest 는 쓰지 않는다
+IMAGE_TAG ?= dev
 NAMESPACE ?= nifi-operator-system
 
 .PHONY: help install-crds run build push deploy undeploy clean

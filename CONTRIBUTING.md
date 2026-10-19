@@ -106,7 +106,7 @@ make nifi-config-test  # conf 설정 CLI 단위 테스트
   questionary 는 실제 터미널을 요구하므로 pty 로 구동해야 합니다.
 
 ```bash
-scripts/build-config-pyz.sh /tmp/argus-config.pyz 2.10.0-1
+scripts/build-config-pyz.sh /tmp/argus-config.pyz 0.5.1
 python3 /tmp/argus-config.pyz --conf-dir <conf> --get nifi.web.https.port
 ```
 
